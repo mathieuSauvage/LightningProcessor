@@ -153,7 +153,7 @@ def loadStartBranchFrame( startDir ):
 	startUp = np.array([0,1,0])
 	startFront = startDir
 
-	if abs( np.dot( startUp, startFront ) )>9.99999: # start of branch is parallel to Up
+	if abs( np.dot( startUp, startFront ) )>0.99999: # start of branch is parallel to Up
 		startUp = np.array([1,0,0])
 
 	startSide = np.cross( startFront, startUp)
@@ -162,8 +162,36 @@ def loadStartBranchFrame( startDir ):
 
 	return startFront, startUp, startSide 
 
+def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, branchMaxPoints, tubeSide):
+	
+	facesConnect = [ ((id/2+1)%2 * ( ( id%4 + id/4 )%tubeSide) + (id/2)%2 *   (( (( 3-id%4 + id/4 )  )%tubeSide) + tubeSide)) + ring*tubeSide + branchNum*tubeSide*branchMaxPoints for branchNum in range(numLightningBranch) for ring in range(branchMaxPoints-1) for id in range(tubeSide*4) ]
+	
+	facesCount = [4]*(tubeSide*(branchMaxPoints-1)*numLightningBranch)
 
-def mayaLightningMesher( branchList ):
+	numVertices = len(resultPoints)/4
+	numFaces = len(facesCount)
+
+	scrUtil = OpenMaya.MScriptUtil()
+	scrUtil.createFromList( resultPoints, len(resultPoints))
+	Mpoints = OpenMaya.MFloatPointArray( scrUtil.asDouble4Ptr(), numVertices)
+
+	scrUtil.createFromList(facesConnect, len(facesConnect))
+	MfaceConnects = OpenMaya.MIntArray( scrUtil.asIntPtr() , len(facesConnect))
+
+	scrUtil.createFromList(facesCount, len(facesCount))
+	MfacesCount = OpenMaya.MIntArray( scrUtil.asIntPtr(), numFaces)
+	
+	dataCreator = OpenMaya.MFnMeshData()
+	outData = dataCreator.create()
+	meshFS = OpenMaya.MFnMesh()
+
+
+	meshFS.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
+
+	return outData
+
+
+def mayaLightningMesherOLD( branchList ):
 	tubeSide = 4
 	pointsOfCircle = np.zeros( (4,tubeSide), np.float32 )
 	pointsOfCircle[1] = np.sin(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
@@ -349,7 +377,7 @@ global proc AElightningboltTemplate( string $nodeName )
 	LP_kOffset = LMProcessor.kAPV_Offset
 
 	# defaults
-	defaultDetailValue = 7
+	defaultDetailValue = 2
 	#----------------------------------------------------------------------------	
 	# helpers to help manage attributes on a Maya node, all the helpers are "statics" methodes of the node	
 	hlp = None
@@ -440,7 +468,9 @@ global proc AElightningboltTemplate( string $nodeName )
 
 			pointList = getPointListFromCurve( self.LightningProcessor.maxPoints, fnNurbs )
 			#pointList = [ [p.x,p.y,p.z] for p in points ]
-			outputData = self.LightningProcessor.process(pointList)
+			self.LightningProcessor.initializeProcessor()
+			self.LightningProcessor.addSeedPointList(pointList)
+			outputData = self.LightningProcessor.process()
 
 			sys.stderr.write('end of compute\n')
 
