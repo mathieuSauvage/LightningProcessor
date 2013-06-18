@@ -1,6 +1,31 @@
 #!/usr/bin/python
 # -*- coding: iso-8859-1 -*-
 
+'''
+================================================================================
+* VERSION 0.0
+================================================================================
+* AUTHOR:
+Mathieu Sauvage mathieu@hiddenforest.fr
+================================================================================
+* INTERNET SOURCE:
+================================================================================
+* DESCRIPTION:
+This is a lightning Processor designed to process batch of lightnings and let a
+good control over the shape of the lightnings.  So it uses numpy to try to have
+a python code as efficient as possible
+================================================================================
+* USAGE:
+================================================================================
+* TODO:
+- Child system
+- good noise
+- clean the inputs that are hardcoded like tubeSide
+- more parameters, seed controls, etc...
+================================================================================
+'''
+
+
 import numpy as np
 import math
 import random
@@ -135,7 +160,7 @@ class lightningBoltProcessor:
 	'''
 
 	def generate( self, batch, APV, isLooping, doGenerateChilds ):
-		
+
 		batchSize, seedPath, APVMults = batch
 		sys.stderr.write('APVMults '+str(APVMults)+'\n')
 		APVs = np.tile(APV,(batchSize,1,1)) 
