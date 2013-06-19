@@ -136,7 +136,6 @@ class lightningBoltProcessor:
 		self.numStartSeedBranch =  self.numStartSeedBranch + 1
 		self.startSeedBranchesAttributes.append(self.APVInputsMultiplier1.reshape(1,-1))
 
-		'''
 		# for testing
 		self.startSeedPoints.extend( [[ point[0],point[1]+2,point[2] ] for point in pointList] )
 		#self.startSeedPoints.append([0,0,0]) # add an extra blank point
@@ -147,7 +146,6 @@ class lightningBoltProcessor:
 		#self.startSeedPoints.append([0,0,0]) # add an extra blank point
 		self.numStartSeedBranch =  self.numStartSeedBranch + 1
 		self.startSeedBranchesAttributes.append(self.APVInputsMultiplier1.reshape(1,-1)*2.0)
-		'''
 
 #sys.stderr.write('seedPathPointsView '+str(seedPathPointsView)+'\n')
 	def generate( self, batch, APV, isLooping, doGenerateChilds ):
@@ -170,10 +168,14 @@ class lightningBoltProcessor:
 
 	# from here we compute the frame ( unit front, unit up, unit side ) at each point
 	# the final frame is a full 4,4 matrix, like this :
-	# 	unit front  0
-	#	unit up     0
-	#	unit side   0
-	#	path point  1
+	#  fx ux sx px 
+	#  fy uy sy py
+	#  fz uz sz pz
+	#  0  0  0  1
+	#  where front is (fx,fy,fz,0)
+	#  where side is (sx,sy,sz,0)
+	#  where up is (ux,uy,uz,0)
+	#  where path point is (px,py,pz,1)
 	# this way we have a full transformation matrix with a good translation that we can use to get all the tube points
 	# algorithm is this:
 	# - compute vector between all the points Di
@@ -187,7 +189,7 @@ class lightningBoltProcessor:
 		frameTemplate = np.array( [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,1]], np.float32 )
 		frames = np.tile(frameTemplate,(batchSize,self.maxPoints,1,1))
 
-		frameFronts = frames[:,:,0,:-1] # get a view for the front only
+		frameFronts = frames[:,:,:-1,0] # get a view for the front only
 		
 		# compute vector between all the points Di = roll( pathPoint, -1 ) - pathPoint
 		unitDir = (np.roll( seedPathPointsView, -1, axis=1 )[:,:-1]) 
@@ -210,9 +212,9 @@ class lightningBoltProcessor:
 			frameFronts[:,1:-1,:] /= normFrontSqr
 
 		#complete for every branch the initial frame
-		firstFrameViewFront = frames[:,0,0,:-1]
-		firstFrameViewUp = frames[:,0,1,:-1]
-		firstFrameViewSide = frames[:,0,2,:-1]
+		firstFrameViewFront = frames[:,0,:-1,0]
+		firstFrameViewUp = frames[:,0,:-1,1]
+		firstFrameViewSide = frames[:,0,:-1,2]
 
 		firstFrameViewUp[:] = [0,1,0] # we initialize Up with vector Y
 		verticalStartBranch = np.where( np.abs( (firstFrameViewUp*firstFrameViewFront).sum(-1)) > 0.99999 )
@@ -226,12 +228,12 @@ class lightningBoltProcessor:
 
 		# now apply the algorithm (Double Reflection) for each branch
 		for i in range(1,self.maxPoints):
-			frontPrevPoint = frames[:,i-1,0,:-1]
-			upPrevPoint = frames[:,i-1,1,:-1]
+			frontPrevPoint = frames[:,i-1,:-1,0]
+			upPrevPoint = frames[:,i-1,:-1,1]
 
-			frontCurrentPoint = frames[:,i,0,:-1]
-			upCurrentPoint = frames[:,i,1,:-1]
-			sideCurrentPoint = frames[:,i,2,:-1]
+			frontCurrentPoint = frames[:,i,:-1,0]
+			upCurrentPoint = frames[:,i,:-1,1]
+			sideCurrentPoint = frames[:,i,:-1,2]
 
 			upL = ((unitDir[:,i-1,:]*upPrevPoint).sum(-1)*-2.0).reshape(-1,1)*unitDir[:,i-1,:]
 			upL += upPrevPoint
@@ -250,7 +252,7 @@ class lightningBoltProcessor:
 		frames[:,:,:-1,:-1] *= APArray[0,:,:,lightningBoltProcessor.kAPV_Radius,np.newaxis,np.newaxis]
 
 		# load branch points in frames to complete the transformation matrix (we are done with the frames!)
-		frames[:,:,3,:-1] = seedPathPointsView
+		frames[:,:,:-1,3] = seedPathPointsView
 
 	# now we can generate childs if we need
 		childBatches = None
@@ -321,17 +323,19 @@ class lightningBoltProcessor:
 
 		# here deduce points from frame and circles and add them to resultPoints
 		# transform a circle of point for each frame
-		circles = np.tile(pointsOfCircle,(len(resultFrames[0]),1,1)) # make enough circles
-		sys.stderr.write('circles '+str(circles.reshape(self.maxPoints, tubeSide,4))+'\n')
-		sys.stderr.write('resultFrames[0] '+str(resultFrames[0])+'\n')
-		sys.stderr.write('dot '+str( np.dot(circles.reshape(self.maxPoints, tubeSide,1,4),resultFrames[0]))+'\n')
+		#circles = np.tile(pointsOfCircle,(len(resultFrames[0]),1,1)) # make enough circles
+		#sys.stderr.write('resultFrames[0] '+str(resultFrames[0])+'\n')
 
 		# avec v le vecteur et u la matrice
 		# np.dot(v,u) donne les coordonnees transformee par u
-
-		resultPoints = [ coord for array in resultFrames for k in range(len(array)) for point in (np.dot(circles[k],array[k])).tolist() for coord in point  ]
+		#circles = circles.reshape(-1,4)
+		#frameV = resultFrames[0].reshape(-1,4,4)
+		resultPoints = [ coord for array in resultFrames for coord in ((np.inner(array,pointsOfCircle)).transpose(0,2,1)).reshape(-1).tolist() ]
+		
+		#resultPoints = [ coord for array in resultFrames for k in range(len(array)) for point in (np.dot(circles[k],array[k])).tolist() for coord in point  ]
 
 		sys.stderr.write('resultPoints '+str(resultPoints)+'\n')
+		sys.stderr.write('num points '+str(len(resultPoints))+'\n')
 
 		resultLoopingPoints = [] # TODO
 		numLoopingLightningBranch = 0 # TODO
@@ -339,7 +343,6 @@ class lightningBoltProcessor:
 		average = self.timer.stop()
 
 		sys.stderr.write('time '+str(average)+'\n')
-		
 
 		return self.outSoftwareFunc( resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, self.maxPoints, tubeSide )
 
