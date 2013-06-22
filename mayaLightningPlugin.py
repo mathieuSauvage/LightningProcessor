@@ -198,7 +198,6 @@ def mayaLightningMesherOLD( branchList ):
 	pointsOfCircle[2] = np.cos(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
 	pointsOfCircle[3] = np.ones(tubeSide)
 	pointsOfCircle = pointsOfCircle.T
-	#pointsOfCircle = np.array( [[ 0,  1,  0,  1],[0,  0,  1,  1],[ 0, -1,  0,  1],[ 0,  0,  -1,  1]] )
 
 	points = []
 	facesConnect =[]
@@ -357,6 +356,10 @@ global proc AElightningboltTemplate( string $nodeName )
 			editorTemplate -addControl "radiusMult";
 			AEaddRampControl ($nodeName+".offsetRamp");
 			editorTemplate -addControl "offsetMult";
+			AEaddRampControl ($nodeName+".elevationRamp");
+			editorTemplate -addControl "elevationMult";
+			AEaddRampControl ($nodeName+".elevationRandRamp");
+			editorTemplate -addControl "elevationRandMult";
 		editorTemplate -endLayout;
 
 		AEdependNodeTemplate $nodeName;
@@ -375,9 +378,11 @@ global proc AElightningboltTemplate( string $nodeName )
 	LP_kRadius = LMProcessor.kAPV_Radius
 	LP_kIntensity = LMProcessor.kAPV_Intensity
 	LP_kOffset = LMProcessor.kAPV_Offset
+	LP_kElevation = LMProcessor.kAPV_Elevation
+	LP_kElevationRand = LMProcessor.kAPV_ElevationRand
 
 	# defaults
-	defaultDetailValue = 2
+	defaultDetailValue = 1
 	#----------------------------------------------------------------------------	
 	# helpers to help manage attributes on a Maya node, all the helpers are "statics" methodes of the node	
 	hlp = None
@@ -398,10 +403,15 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempDetail = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.detail, thisNode,data)
 			tempRadiusRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRamp, thisNode,data)
 			tempOffsetRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRamp, thisNode,data)
+			tempElevationRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRamp, thisNode,data)
+			tempElevationRandRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRamp, thisNode,data)
 
 			self.LightningProcessor.setDetail(tempDetail)
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kRadius ), tempRadiusRamp )
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kOffset ), tempOffsetRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevation ), tempElevationRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevationRand ), tempElevationRandRamp )
+
 
 			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.samplingDummyOut, thisNode,data)
 			outputHandle.setInt(1)
@@ -418,6 +428,8 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempSeedBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.seedBranching, thisNode,data)
 			tempRadiusMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusMult, thisNode,data)
 			tempOffsetMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetMult, thisNode,data)
+			tempElevationMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationMult, thisNode,data)
+			tempElevationRandMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandMult, thisNode,data)
 
 
 			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
@@ -445,6 +457,8 @@ global proc AElightningboltTemplate( string $nodeName )
 			# load the inputs of the node into the processor			
 			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kRadius, tempRadiusMult )
 			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kOffset, tempOffsetMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevation, tempElevationMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevationRand, tempElevationRandMult )
 
 			#sys.stderr.write("vector "+str(tempVectorStart.x)+" "+str(tempVectorStart.y)+" "+str(tempVectorStart.z)+"\n")
 
@@ -470,7 +484,7 @@ global proc AElightningboltTemplate( string $nodeName )
 			#pointList = [ [p.x,p.y,p.z] for p in points ]
 			self.LightningProcessor.initializeProcessor()
 			self.LightningProcessor.addSeedPointList(pointList)
-			outputData = self.LightningProcessor.process()
+			outputData = self.LightningProcessor.process(tempTimeBranching.value())
 
 			sys.stderr.write('end of compute\n')
 
@@ -493,6 +507,8 @@ global proc AElightningboltTemplate( string $nodeName )
 		# thanks to this blog for the idea : http://www.chadvernon.com/blog/resources/maya-api-programming/mrampattribute/
 		self.postConstructorRampValueInitialize(lightningBoltNode.radiusRamp.mObject)
 		self.postConstructorRampValueInitialize(lightningBoltNode.offsetRamp.mObject)
+		self.postConstructorRampValueInitialize(lightningBoltNode.elevationRamp.mObject)
+		self.postConstructorRampValueInitialize(lightningBoltNode.elevationRandRamp.mObject)
 
 def nodeCreator():
 	return OpenMayaMPx.asMPxPtr( lightningBoltNode() )
@@ -517,6 +533,13 @@ def nodeInitializer():
 
 	lightningBoltNode.hlp.createAtt( name = "offsetRamp", fn=OpenMaya.MRampAttribute, shortName="or", type="Ramp" )		
 	lightningBoltNode.hlp.createAtt( name = "offsetMult", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+
+	# elevation 1 = 180 degree
+	lightningBoltNode.hlp.createAtt( name = "elevationRamp", fn=OpenMaya.MRampAttribute, shortName="er", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationMult", fn=numAttr, shortName="em", type=OpenMaya.MFnNumericData.kDouble, default=.33, exceptAffectList=['samplingDummyOut'] )	
+
+	lightningBoltNode.hlp.createAtt( name = "elevationRandRamp", fn=OpenMaya.MRampAttribute, shortName="err", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationRandMult", fn=numAttr, shortName="erm", type=OpenMaya.MFnNumericData.kDouble, default=.15, exceptAffectList=['samplingDummyOut'] )	
 
 #	lightningBoltNode.createAtt( name = "timeShape", fn=unitAttr, shortName="ts", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, outsAffectList=['outputMesh'] )	
 #	lightningBoltNode.createAtt( name = "timeBranching", fn=unitAttr, shortName="tb", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, outsAffectList=['outputMesh'] )	
