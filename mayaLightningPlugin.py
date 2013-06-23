@@ -162,7 +162,7 @@ def loadStartBranchFrame( startDir ):
 
 	return startFront, startUp, startSide 
 
-def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, branchMaxPoints, tubeSide):
+def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, resultIntensityColors, branchMaxPoints, tubeSide):
 	
 	facesConnect = [ ((id/2+1)%2 * ( ( id%4 + id/4 )%tubeSide) + (id/2)%2 *   (( (( 3-id%4 + id/4 )  )%tubeSide) + tubeSide)) + ring*tubeSide + branchNum*tubeSide*branchMaxPoints for branchNum in range(numLightningBranch) for ring in range(branchMaxPoints-1) for id in range(tubeSide*4) ]
 	
@@ -183,10 +183,20 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 	
 	dataCreator = OpenMaya.MFnMeshData()
 	outData = dataCreator.create()
-	meshFS = OpenMaya.MFnMesh()
+	meshFn = OpenMaya.MFnMesh()
 
 
-	meshFS.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
+	meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
+
+	# vertexColors
+	scrUtil.createFromList( resultIntensityColors, len(resultIntensityColors))
+	MColors = OpenMaya.MColorArray( scrUtil.asDouble4Ptr(), numVertices )
+
+	scrUtil.createFromList( range(numVertices) , numVertices )
+	MVertexIds = OpenMaya.MIntArray( scrUtil.asIntPtr(), numVertices )
+
+	meshFn.setVertexColors( MColors, MVertexIds )
+
 
 	return outData
 
@@ -334,12 +344,16 @@ def getPointListFromCurve( numPoints, fnCurve):
 	pt=OpenMaya.MPoint()
 	param=paramStart
 	res = []
+	fullLength = 0
 	for i in range(numPoints):
 		#sys.stderr.write('i '+str(i)+' param '+str(param)+'\n')
 		fnCurve.getPointAtParam(param, pt)
 		res.append( [pt.x,pt.y,pt.z] )
+		if i>0 :
+			fullLength += math.sqrt(res[i-1][0]*pt.x + res[i-1][1]*pt.y + res[i-1][2]*pt.z) 
+
 		param += step
-	return res
+	return res, fullLength
 		
 class lightningBoltNode(OpenMayaMPx.MPxNode):
 		
@@ -351,11 +365,17 @@ global proc AElightningboltTemplate( string $nodeName )
 
 	AEswatchDisplay  $nodeName;
 	editorTemplate -beginScrollLayout;
+		editorTemplate -beginLayout "general parameters" -collapse 0;
+			editorTemplate -addControl "generationMax";
 		editorTemplate -beginLayout "lightning Shape parameters" -collapse 0;
 			AEaddRampControl ($nodeName+".radiusRamp");
 			editorTemplate -addControl "radiusMult";
 			AEaddRampControl ($nodeName+".offsetRamp");
 			editorTemplate -addControl "offsetMult";
+			AEaddRampControl ($nodeName+".childLengthRamp");
+			editorTemplate -addControl "childLengthMult";
+			AEaddRampControl ($nodeName+".intensityRamp");
+			editorTemplate -addControl "intensityMult";
 			AEaddRampControl ($nodeName+".elevationRamp");
 			editorTemplate -addControl "elevationMult";
 			AEaddRampControl ($nodeName+".elevationRandRamp");
@@ -375,14 +395,17 @@ global proc AElightningboltTemplate( string $nodeName )
 	# some shortcuts
 	LMProcessor = lightningModule.lightningBoltProcessor
 	# shortcut to call pseudo-enum
-	LP_kRadius = LMProcessor.kAPV_Radius
-	LP_kIntensity = LMProcessor.kAPV_Intensity
-	LP_kOffset = LMProcessor.kAPV_Offset
-	LP_kElevation = LMProcessor.kAPV_Elevation
-	LP_kElevationRand = LMProcessor.kAPV_ElevationRand
+	LP_kRadius = LMProcessor.eAPV.radius
+	LP_kIntensity = LMProcessor.eAPV.intensity
+	LP_kOffset = LMProcessor.eAPV.offset
+	LP_kElevation = LMProcessor.eAPV.elevation
+	LP_kElevationRand = LMProcessor.eAPV.elevationRand
+	LP_kChildLength = LMProcessor.eAPV.childLength
+
 
 	# defaults
 	defaultDetailValue = 1
+	defaultMaxGeneration = 3
 	#----------------------------------------------------------------------------	
 	# helpers to help manage attributes on a Maya node, all the helpers are "statics" methodes of the node	
 	hlp = None
@@ -402,13 +425,17 @@ global proc AElightningboltTemplate( string $nodeName )
 			# Basic Ramp Attribute to Sample
 			tempDetail = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.detail, thisNode,data)
 			tempRadiusRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRamp, thisNode,data)
+			tempIntensityRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityRamp, thisNode,data)
 			tempOffsetRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRamp, thisNode,data)
+			tempChildLengthRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthRamp, thisNode,data)
 			tempElevationRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRamp, thisNode,data)
 			tempElevationRandRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRamp, thisNode,data)
 
 			self.LightningProcessor.setDetail(tempDetail)
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kRadius ), tempRadiusRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kIntensity ), tempIntensityRamp )
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kOffset ), tempOffsetRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kChildLength ), tempChildLengthRamp )
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevation ), tempElevationRamp )
 			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevationRand ), tempElevationRandRamp )
 
@@ -422,19 +449,25 @@ global proc AElightningboltTemplate( string $nodeName )
 
 			thisNode = self.thisMObject()
 
+			tempMaxGeneration = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.maxGeneration, thisNode,data)
+
 			tempTimeShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.timeShape, thisNode,data)
 			tempTimeBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.timeBranching, thisNode,data)
 			tempSeedShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.seedShape, thisNode,data)
 			tempSeedBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.seedBranching, thisNode,data)
 			tempRadiusMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusMult, thisNode,data)
+			tempIntensityMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityMult, thisNode,data)
 			tempOffsetMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetMult, thisNode,data)
+			tempChildLengthMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthMult, thisNode,data)
 			tempElevationMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationMult, thisNode,data)
 			tempElevationRandMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandMult, thisNode,data)
-
 
 			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
 			plugDum = OpenMaya.MPlug( thisNode, lightningBoltNode.samplingDummyOut.mObject) 
 			triggerSampling = plugDum.asInt()
+
+
+			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.outputMesh, thisNode,data)
 
 			'''
 			# Chaos Offset Attribute
@@ -453,19 +486,7 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempIteration = lightningBoltNode.getAttValue(thisNode,data,"iterations")
 			tempTubeDetail = lightningBoltNode.getAttValue(thisNode,data,"tubeSides")
 			tempVectorStart = lightningBoltNode.getAttValue(thisNode,data,"upVectorStart")
-			'''			
-			# load the inputs of the node into the processor			
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kRadius, tempRadiusMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kOffset, tempOffsetMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevation, tempElevationMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevationRand, tempElevationRandMult )
-
-			#sys.stderr.write("vector "+str(tempVectorStart.x)+" "+str(tempVectorStart.y)+" "+str(tempVectorStart.z)+"\n")
-
-			#fnDep = OpenMaya.MFnDependencyNode(thisNode)
-			#nodeName = fnDep.name()
-			#sys.stderr.write('node '+nodeName+' has object '+str(self.LightningProcessor)+'\n')
-			
+			'''
 			tempCurve = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.inputCurve, thisNode,data)
 
 			if tempCurve.isNull():
@@ -474,17 +495,27 @@ global proc AElightningboltTemplate( string $nodeName )
 				return
 
 			fnNurbs = OpenMaya.MFnNurbsCurve( tempCurve )
-			#numPoints = fnNurbs.numCVs()
-			#points = OpenMaya.MPointArray()
-			#fnNurbs.getCVs(points)
-					
-			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.outputMesh, thisNode,data)
+			pointList, cvLength = getPointListFromCurve( self.LightningProcessor.maxPoints, fnNurbs )
 
-			pointList = getPointListFromCurve( self.LightningProcessor.maxPoints, fnNurbs )
-			#pointList = [ [p.x,p.y,p.z] for p in points ]
+
+			# load the inputs of the node into the processor			
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kRadius, tempRadiusMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kIntensity, tempIntensityMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kOffset, tempOffsetMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevation, tempElevationMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevationRand, tempElevationRandMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kChildLength, tempChildLengthMult*cvLength )
+
+			#sys.stderr.write("vector "+str(tempVectorStart.x)+" "+str(tempVectorStart.y)+" "+str(tempVectorStart.z)+"\n")
+
+			#fnDep = OpenMaya.MFnDependencyNode(thisNode)
+			#nodeName = fnDep.name()
+			#sys.stderr.write('node '+nodeName+' has object '+str(self.LightningProcessor)+'\n')
+			
+
 			self.LightningProcessor.initializeProcessor()
 			self.LightningProcessor.addSeedPointList(pointList)
-			outputData = self.LightningProcessor.process(tempTimeBranching.value())
+			outputData = self.LightningProcessor.process(tempMaxGeneration, tempTimeBranching.value())
 
 			sys.stderr.write('end of compute\n')
 
@@ -493,22 +524,26 @@ global proc AElightningboltTemplate( string $nodeName )
 		else:
 			return OpenMaya.kUnknownParameter
 
-	def postConstructorRampValueInitialize( self, rampMObj):
+	def postConstructorRampInitialize( self, rampMObj, values):
 		thisNode = self.thisMObject()
 		plugRamp = OpenMaya.MPlug( thisNode, rampMObj)
-		elemPlug = plugRamp.elementByLogicalIndex( 0 )
-		posPlug = elemPlug.child(0)
-		valPlug = elemPlug.child(1)
-		valPlug.setDouble(1)
-		posPlug.setDouble(0)
-
+		for i in range(len(values)) :
+			val = values[i]
+			elemPlug = plugRamp.elementByLogicalIndex( i )
+			posPlug = elemPlug.child(0)
+			valPlug = elemPlug.child(1)
+			posPlug.setDouble(val[0])
+			valPlug.setDouble(val[1])
+	
 	def postConstructor(self):
 		# setting the Ramp initial value because it cannot be done in the AETemplate
 		# thanks to this blog for the idea : http://www.chadvernon.com/blog/resources/maya-api-programming/mrampattribute/
-		self.postConstructorRampValueInitialize(lightningBoltNode.radiusRamp.mObject)
-		self.postConstructorRampValueInitialize(lightningBoltNode.offsetRamp.mObject)
-		self.postConstructorRampValueInitialize(lightningBoltNode.elevationRamp.mObject)
-		self.postConstructorRampValueInitialize(lightningBoltNode.elevationRandRamp.mObject)
+		self.postConstructorRampInitialize( lightningBoltNode.radiusRamp.mObject, [(0,1),(1,0)] )
+		self.postConstructorRampInitialize( lightningBoltNode.offsetRamp.mObject, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( lightningBoltNode.childLengthRamp.mObject, [(0,1),(1,.25)] )
+		self.postConstructorRampInitialize( lightningBoltNode.intensityRamp.mObject, [(0,1),(1,0.5)] )
+		self.postConstructorRampInitialize( lightningBoltNode.elevationRamp.mObject, [(0,0.5),(1,.15)] )
+		self.postConstructorRampInitialize( lightningBoltNode.elevationRandRamp.mObject, [(0,1)] )
 
 def nodeCreator():
 	return OpenMayaMPx.asMPxPtr( lightningBoltNode() )
@@ -521,18 +556,26 @@ def nodeInitializer():
 
 	lightningBoltNode.hlp = attCreationHlp(lightningBoltNode)
 
+	lightningBoltNode.hlp.createAtt( name = "maxGeneration", fn=numAttr, shortName="mg", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultMaxGeneration, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "detail", fn=numAttr, shortName="det", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultDetailValue )	
+
 	lightningBoltNode.hlp.createAtt( name = "timeShape", fn=unitAttr, shortName="ts", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "timeBranching", fn=unitAttr, shortName="tb", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "seedShape", fn=numAttr, shortName="ss", type=OpenMaya.MFnNumericData.kInt, default=0.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "seedBranching", fn=numAttr, shortName="sb", type=OpenMaya.MFnNumericData.kInt, default=0.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "inputCurve", fn=typedAttr, shortName="ic", type=OpenMaya.MFnData.kNurbsCurve, exceptAffectList=['samplingDummyOut'] )	
 
-	lightningBoltNode.hlp.createAtt( name = "detail", fn=numAttr, shortName="det", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultDetailValue )	
 	lightningBoltNode.hlp.createAtt( name = "radiusRamp", fn=OpenMaya.MRampAttribute, shortName="rr", type="Ramp" )		
-	lightningBoltNode.hlp.createAtt( name = "radiusMult", fn=numAttr, shortName="rm", type=OpenMaya.MFnNumericData.kDouble, default=0.5, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "radiusMult", fn=numAttr, shortName="rm", type=OpenMaya.MFnNumericData.kDouble, default=0.25, exceptAffectList=['samplingDummyOut'] )	
 
 	lightningBoltNode.hlp.createAtt( name = "offsetRamp", fn=OpenMaya.MRampAttribute, shortName="or", type="Ramp" )		
 	lightningBoltNode.hlp.createAtt( name = "offsetMult", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+
+	lightningBoltNode.hlp.createAtt( name = "childLengthRamp", fn=OpenMaya.MRampAttribute, shortName="clr", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "childLengthMult", fn=numAttr, shortName="clm", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	
+	lightningBoltNode.hlp.createAtt( name = "intensityRamp", fn=OpenMaya.MRampAttribute, shortName="ir", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "intensityMult", fn=numAttr, shortName="im", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 	# elevation 1 = 180 degree
 	lightningBoltNode.hlp.createAtt( name = "elevationRamp", fn=OpenMaya.MRampAttribute, shortName="er", type="Ramp" )
