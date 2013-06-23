@@ -18,8 +18,8 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
-- putting the length
 - implementing the transfert of attribute
+- implementing the intensity with vertex color
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
 - good noise
 - clean the inputs that are hardcoded like tubeSide
@@ -40,6 +40,10 @@ class LBP_msCommandException(Exception):
     
     def __str__(self):
         return self.message
+
+def enum(*sequential, **named):
+    enums = dict(zip(sequential, range(len(sequential))), **named)
+    return type('Enum', (), enums)
 
 class avgTimer:
 	def __init__( self, numValues ):
@@ -139,23 +143,13 @@ def npaRandSphereElevation( aElevation, aAmplitude, aPhi, aAmplitudeRand,  N ):
 class lightningBoltProcessor:
 
 	# Along Path values Enum (attributes transmitted to children by mult)
-	kAPV_Radius = 0
-	kAPV_Intensity = 1
-	kAPV_Offset = 2
-	kAPV_Elevation = 3
-	kAPV_ElevationRand = 4
-	kAPV_MaxAttributes = 5
+	eAPV = enum('radius', 'intensity', 'offset', 'childLength', 'elevation', 'elevationRand', 'max')
 
 	# Values enum (attributes transmitted to children by mult)
-	kV_numChildrens = 0
-	kV_randNumChildrens = 1
-	kV_branchingTimeMult = 2
-	kV_MaxAttributes = 3
+	eV = enum('numChildrens', 'randNumChildrens', 'branchingTimeMult', 'max')
 
 	# Generic Values enum (no transmitted by function)
-	kGV_seedBranching = 0
-	kGV_MaxAttributes = 1
-	
+	eGV = enum('seedBranching', 'max')
 
 	def __init__( self, outSoftwareFunc = None ):
 		self.outSoftwareFunc = outSoftwareFunc
@@ -172,29 +166,32 @@ class lightningBoltProcessor:
 		# column 2 is Offset
 		self.APVInputs1 = None
 		# this is a vector with all the multiplicator to apply to APVInputs
-		self.APVInputsMultiplier1 = np.zeros((lightningBoltProcessor.kAPV_MaxAttributes),np.float32)
+		self.APVInputsMultiplier1 = np.zeros((lightningBoltProcessor.eAPV.max),np.float32)
+		self.APVTransfert = np.ones(lightningBoltProcessor.eAPV.max,np.float32) # mults for transfert of attribute from parent to child
 
 		# has no variation along the path is transmitted to child
 		# O numchildens (nombre d'enfant genere obligatoirement)
 		# 1 randNumChildrens (nombre d'enfant potentiellement genere aleatoirement en plus)
 		# 2 branchingTimeMult (Multiplicator to timeBranching used to generate the childs number and params)
-		self.VInputs = np.zeros((lightningBoltProcessor.kV_MaxAttributes),np.float32)
+		self.VInputs = np.zeros((lightningBoltProcessor.eV.max),np.float32)
+		self.VTransfert = np.ones(lightningBoltProcessor.eV.max,np.float32) # mult for transfert of attribute from parent to child
 
 		# generic values (is not transmitted by function to child)
 		# 0 seedBranching (the seed that decided the number of childrens and the parameters of each one)
-		self.GVInputs = np.zeros((lightningBoltProcessor.kGV_MaxAttributes),np.float32)
+		self.GVInputs = np.zeros((lightningBoltProcessor.eGV.max),np.float32)
 
 		#for testing
-		self.VInputs[lightningBoltProcessor.kV_numChildrens] = 2
-		self.VInputs[lightningBoltProcessor.kV_randNumChildrens] = 2
-		self.GVInputs[lightningBoltProcessor.kGV_seedBranching] = 437
+		self.setValue(lightningBoltProcessor.eV.numChildrens, 2.0 ) 
+		self.setValue(lightningBoltProcessor.eV.randNumChildrens, 2.0 ) 
+		self.setGenericValue(lightningBoltProcessor.eGV.seedBranching, 437 )
+		self.setAPVTransfert( lightningBoltProcessor.eAPV.radius, 0.25)
 
 	def setDetail( self, detail):
 		if detail == self.detail:
 			return
 		self.detail = detail
 		self.maxPoints = 2 + 2**detail
-		self.APVInputs1 = np.zeros((self.maxPoints,lightningBoltProcessor.kAPV_MaxAttributes),np.float32)
+		self.APVInputs1 = np.zeros((self.maxPoints,lightningBoltProcessor.eAPV.max),np.float32)
 	
 	def getAPVariation1(self, num):
 		''' to get the array specific to one attribute '''
@@ -202,9 +199,13 @@ class lightningBoltProcessor:
 
 	def setAPVMult1(self, num, value):
 		self.APVInputsMultiplier1[num] = value
+	def setAPVTransfert(self, num, value):
+		self.APVTransfert[num] = value
 
 	def setValue(self, num, value):
 		self.VInputs[num] = value
+	def setValueTransfert(self, num, value):
+		self.VTransfert[num] = value
 
 	def setGenericValue(self, num, value):
 		self.GVInputs[num] = value
@@ -268,7 +269,7 @@ class lightningBoltProcessor:
 		#test = APArray[:,:,:,lightningBoltProcessor.kAPV_Offset].reshape(1,1,batchSize,self.maxPoints,-1)
 		#sys.stderr.write('test '+str(test)+'\n')
 
-		seedPathPointsView += (offsetArray*APArray[:,:,:,lightningBoltProcessor.kAPV_Offset].reshape(1,1,batchSize,self.maxPoints,-1))[0,0]
+		seedPathPointsView += (offsetArray*APArray[:,:,:,lightningBoltProcessor.eAPV.offset].reshape(1,1,batchSize,self.maxPoints,-1))[0,0]
 		#sys.stderr.write('seedPath '+str(seedPath)+'\n')
 
 	# from here we compute the frame ( unit front, unit up, unit side ) at each point
@@ -358,7 +359,7 @@ class lightningBoltProcessor:
 			sideCurrentPoint[...] = np.cross(frontCurrentPoint,upCurrentPoint)
 
 		# multiply frames by corresponding Radius ( we scale only the vectors )
-		frames[:,:,:-1,:-1] *= APArray[0,:,:,lightningBoltProcessor.kAPV_Radius,np.newaxis,np.newaxis]
+		frames[:,:,:-1,:-1] *= APArray[0,:,:,lightningBoltProcessor.eAPV.radius,np.newaxis,np.newaxis]
 
 		# load branch points in frames to complete the transformation matrix (we are done with the frames!)
 		frames[:,:,:-1,3] = seedPathPointsView
@@ -366,24 +367,24 @@ class lightningBoltProcessor:
 	# now we can generate childs if we need
 		childsBatch = None
 		if doGenerateChilds:
-			#sys.stderr.write('GValues[:,lightningBoltProcessor.kGV_seedBranching] '+str(GValues[:,lightningBoltProcessor.kGV_seedBranching])+'\n')
-			GValues[:,lightningBoltProcessor.kGV_seedBranching] += np.floor( Values[:,lightningBoltProcessor.kV_branchingTimeMult]*branchingTime )
+			#sys.stderr.write('GValues[:,lightningBoltProcessor.eGV.seedBranching] '+str(GValues[:,lightningBoltProcessor.eGV.seedBranching])+'\n')
+			GValues[:,lightningBoltProcessor.eGV.seedBranching] += np.floor( Values[:,lightningBoltProcessor.eV.branchingTimeMult]*branchingTime )
 
 			allChildsParams = []
 			allChildsBranchParentId = ([],[])
 			allRandValuesForSpherePt = []
 			# we have to loop through the branches, no choice to generate the randoms values with a seed for each branch
 			for i in range(batchSize): 
-				randBranch = nRand(GValues[i,lightningBoltProcessor.kGV_seedBranching])
-				Values[i,lightningBoltProcessor.kV_numChildrens] += randBranch.randInt(0, Values[i,lightningBoltProcessor.kV_randNumChildrens] )
-				allChildsParams.append( randBranch.npaRandEpsilon(float(i*self.maxPoints), float((i+1)*self.maxPoints-1), Values[i,lightningBoltProcessor.kV_numChildrens] ) )
+				randBranch = nRand(GValues[i,lightningBoltProcessor.eGV.seedBranching])
+				Values[i,lightningBoltProcessor.eV.numChildrens] += randBranch.randInt(0, Values[i,lightningBoltProcessor.eV.randNumChildrens] )
+				allChildsParams.append( randBranch.npaRandEpsilon(float(i*self.maxPoints), float((i+1)*self.maxPoints-1), Values[i,lightningBoltProcessor.eV.numChildrens] ) )
 				# random values used to generate random direction from parent branch
-				allRandValuesForSpherePt.append( randBranch.npaRand(0.0,2.0,(2,Values[i,lightningBoltProcessor.kV_numChildrens]) ) )
-				allChildsBranchParentId[0].extend( [i]*Values[i,lightningBoltProcessor.kV_numChildrens] )
+				allRandValuesForSpherePt.append( randBranch.npaRand(0.0,2.0,(2,Values[i,lightningBoltProcessor.eV.numChildrens]) ) )
+				allChildsBranchParentId[0].extend( [i]*Values[i,lightningBoltProcessor.eV.numChildrens] )
 
 			totalChildNumber = len(allChildsBranchParentId[0])
 
-			APVView = APArray.reshape(-1,lightningBoltProcessor.kAPV_MaxAttributes)
+			APVView = APArray.reshape(-1,lightningBoltProcessor.eAPV.max)
 			#sys.stderr.write('APArray '+str(APArray)+'\n')
 			blend = np.array(allChildsParams, np.float32).reshape(-1)
 			#sys.stderr.write('blend '+str(blend)+'\n')
@@ -397,7 +398,11 @@ class lightningBoltProcessor:
 			#sys.stderr.write('APVView[indexT0]'+str(APVView[indexT0])+'\n')
 			#sys.stderr.write('blend*APVView[indexT0]'+str(blend*APVView[indexT0])+'\n')
 			APVMultChilds = APVViewT0 + blend*( APVView[indexT0+1] - APVViewT0 )
+			APVMultChilds *= self.APVTransfert # transfert multiply
+
 			ValuesChilds = Values[allChildsBranchParentId[0]]
+			ValuesChilds *= self.VTransfert # transfert multiply
+
 			GValuesChilds = GValues[allChildsBranchParentId[0]]
 
 			#sys.stderr.write('APVMultChilds '+str(APVMultChilds)+'\n')
@@ -442,7 +447,7 @@ class lightningBoltProcessor:
 			aAmplitudeRand = aPhiAndRandAmplitude[:,1].reshape(-1)
 			aPhi*=np.pi 
 			aAmplitudeRand-=1.0 
-			randomVectors = npaRandSphereElevation( APVMultChilds[:,lightningBoltProcessor.kAPV_Elevation], APVMultChilds[:,lightningBoltProcessor.kAPV_ElevationRand],aPhi, aAmplitudeRand, aAmplitudeRand.size  )
+			randomVectors = npaRandSphereElevation( APVMultChilds[:,lightningBoltProcessor.eAPV.elevation], APVMultChilds[:,lightningBoltProcessor.eAPV.elevationRand],aPhi, aAmplitudeRand, aAmplitudeRand.size  )
 
 
 			#sys.stderr.write('childFrames'+str(childFrames)+'\n')
@@ -460,8 +465,12 @@ class lightningBoltProcessor:
 			#sys.stderr.write('childSeedPaths'+str(childSeedPaths)+'\n')
 			#v2[:,np.newaxis]*p2
 			#childFrames[:,0,np.newaxis]*seedPathStep[:,np.newaxis]
+			sys.stderr.write('childFrames'+str(childFrames) +'\n' )
+			sys.stderr.write('APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]'+str(APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]) +'\n' )
+			childFrames *= APVMultChilds[:,lightningBoltProcessor.eAPV.childLength,np.newaxis]
 			seedPathChilds = childFrames[:,np.newaxis]*seedPathStep[:,np.newaxis]
-			#sys.stderr.write('seedPathChilds'+str(seedPathChilds) +'\n' )
+			sys.stderr.write('seedPathChilds'+str(seedPathChilds) +'\n' )
+
 			seedPathT0 = seedPath[indexT0]
 			startPoints = seedPathT0 + blend*( seedPath[indexT0+1] - seedPathT0 )
 
@@ -476,46 +485,15 @@ class lightningBoltProcessor:
 
 			childsBatch = ( totalChildNumber, seedPathChilds.reshape(-1,3) , APVMultChilds.reshape(1,totalChildNumber,1,-1), ValuesChilds, GValuesChilds )
 			#batchSize, seedPath, APVMults, Values, GValues = batch
-
-
-
-			#sys.stderr.write('mult '+str(childFrames*)+'\n')
-
-			#sys.stderr.write('childFramesCalc'+str(childFramesCalc)+'\n')
-
-			#b1 = Vec3f(1.0f - n.x*n.x*a, b, -n.x);
-    		#b2 = Vec3f(b, 1.0f - n.y*n.y*a, -n.y);
-
-
-			#segmentsFrame = np.array( size=(len(allChildsBranchParentId[0]), ) )
 			
+			sys.stderr.write('APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]'+str(APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]) +'\n' )
 
 
+		return frames, APArray[0,:,:,lightningBoltProcessor.eAPV.intensity], childsBatch
 
-			# depending on indexT0
-			# we have the direction unitDir
-
-			'''
-			seeds = np.random.randomInt( 1000, batchSize )
-
-			numChilds = Values[0] + random.randint(0, Values[1])
-			epsilon = 0.000001
-			childsParams = np.random.uniform(epsilon, float(self.maxPoints-1) - epsilon, numChilds)
-			for c in childsParams:
-				sys.stderr.write('child param '+str(c)+'\n')
-				id0 = int(c)
-				id1 = id0 + 1
-				t = c - float(id0)
-				seedAPVal = (1-t)*APArray[0,0,id0] + t*APArray[0,0,id1]
-				sys.stderr.write('seedAPVal '+str(seedAPVal)+'\n')
-			'''
-
-		return frames, childsBatch
-
-	def process(self, branchingTime ):
+	def process(self, maxGeneration, branchingTime ):
 		self.timer.start()
 
-		maxGeneration = 1
 		currentGeneration = 0
 
 		firstGenerationAPV  = self.APVInputs1
@@ -528,6 +506,9 @@ class lightningBoltProcessor:
 		pointsOfCircle[2] = np.cos(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
 		pointsOfCircle[3] = np.ones(tubeSide)
 		pointsOfCircle = pointsOfCircle.T
+
+		# intensity color template
+		colorTemplate = np.ones( (tubeSide,4), np.float32 )
 
 
 		# --- create the first datas (seedPath, attributes ) to process 
@@ -548,10 +529,12 @@ class lightningBoltProcessor:
 		numLightningBranch = 0
 		isLooping = False
 
+		resultIntensities = []
+
 		batchSize = self.numStartSeedBranch
 		batch = batchSize, startSeedPath, startSeedAPVMult, startSeedValues, startSeedGenericValues
 		while batch is not None:
-			outFrames, childBatch = self.generate( batch, APV, branchingTime, isLooping, currentGeneration<maxGeneration)
+			outFrames, outIntensities, childBatch = self.generate( batch, APV, branchingTime, isLooping, currentGeneration<maxGeneration)
 
 			if isLooping :
 				resultLoopingFrames.append(outFrames.reshape(-1,4,4))
@@ -559,6 +542,7 @@ class lightningBoltProcessor:
 			else:
 				resultFrames.append(outFrames.reshape(-1,4,4))
 				numLightningBranch += batch[0]
+				resultIntensities.append(outIntensities.reshape(-1))
 
 			batch = childBatch
 			# set the generation to the general values
@@ -576,10 +560,15 @@ class lightningBoltProcessor:
 		#circles = circles.reshape(-1,4)
 		#frameV = resultFrames[0].reshape(-1,4,4)
 		resultPoints = [ coord for array in resultFrames for coord in ((np.inner(array,pointsOfCircle)).transpose(0,2,1)).reshape(-1).tolist() ]
-		
+
+		sys.stderr.write('colorTemplate '+str(colorTemplate)+'\n')
+		sys.stderr.write('resultIntensities[0] '+str(resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
+		sys.stderr.write('resultIntensities[0]*colorTemplate '+str(colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
+		resultIntensityColors = [ coord for array in resultIntensities for coord in (colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis]).reshape(-1).tolist() ]
 		#resultPoints = [ coord for array in resultFrames for k in range(len(array)) for point in (np.dot(circles[k],array[k])).tolist() for coord in point  ]
 
 		#sys.stderr.write('resultPoints '+str(resultPoints)+'\n')
+		sys.stderr.write('resultIntensityColors '+str(resultIntensityColors)+'\n')
 		#sys.stderr.write('num points '+str(len(resultPoints))+'\n')
 
 		resultLoopingPoints = [] # TODO
@@ -589,5 +578,5 @@ class lightningBoltProcessor:
 
 		sys.stderr.write('time '+str(average)+'\n')
 
-		return self.outSoftwareFunc( resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, self.maxPoints, tubeSide )
+		return self.outSoftwareFunc( resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, resultIntensityColors, self.maxPoints, tubeSide )
 
