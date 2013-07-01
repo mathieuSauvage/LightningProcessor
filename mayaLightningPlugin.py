@@ -196,104 +196,6 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 	MVertexIds = OpenMaya.MIntArray( scrUtil.asIntPtr(), numVertices )
 
 	meshFn.setVertexColors( MColors, MVertexIds )
-
-
-	return outData
-
-
-def mayaLightningMesherOLD( branchList ):
-	tubeSide = 4
-	pointsOfCircle = np.zeros( (4,tubeSide), np.float32 )
-	pointsOfCircle[1] = np.sin(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
-	pointsOfCircle[2] = np.cos(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
-	pointsOfCircle[3] = np.ones(tubeSide)
-	pointsOfCircle = pointsOfCircle.T
-
-	points = []
-	facesConnect =[]
-	facesCount = []
-
-	for b in branchList :
-		path, attributes = b
-		#sys.stderr.write("attributes "+str(attributes)+"\n")
-
-		vectors = (np.roll(path,-3) - path)[:-1]
-		normSqr = (vectors**2).sum(-1)
-		vectorsUnit = vectors/np.sqrt(normSqr).reshape(-1,1)
-
-		numPathPoints = len(path)
-		#test = ((np.tile(pointsOfCircle,(numPathPoints,1,1))).reshape(numPathPoints*tubeSide,4)[:,:-1]).reshape(numPathPoints,tubeSide,3)
-		#sys.stderr.write("circles "+str(test)+"\n")
-		circles = np.tile(pointsOfCircle,(numPathPoints,1,1)) # make enough circles
-		#sys.stderr.write("circles "+str(circles)+"\n")
-
-		branchFrames = np.zeros( (numPathPoints,4,4), np.float32 )
-
-		frame = np.array( [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,1]], np.float32 )
-		prevFrame = np.array( [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,1]], np.float32 )
-		branchFaceConnect = [ ((id/2+1)%2 * ( ( id%4 + id/4 )%tubeSide) + (id/2)%2 *   (( (( 3-id%4 + id/4 )  )%tubeSide) + tubeSide)) + ring*tubeSide for ring in range(numPathPoints-1) for id in range(tubeSide*4) ]
-		branchFaceCount = [4]*(tubeSide*(numPathPoints-1))
-		
-		facesConnect.extend(branchFaceConnect)		
-		facesCount.extend(branchFaceCount) 
-
-
-		tpFr, tpUp, tpSi = loadStartBranchFrame( vectorsUnit[0] )
-
-		prevFrame[0][:-1] = tpFr
-		prevFrame[1][:-1] = tpUp
-		prevFrame[2][:-1] = tpSi
-		prevFrame[3][:-1] = path[0] # point of seedPath
-		branchFrames[0] = prevFrame
-		branchFrames[0][:-1,:-1]*=attributes[0][lightningBoltNode.LP_kRadius]
-
-		for i in range(1,numPathPoints):
-			if i<(numPathPoints-1):
-				frame[0][:-1] = vectorsUnit[i-1] + vectorsUnit[i]
-				frame[0] /= math.sqrt( (frame[0]**2).sum(-1) ) # normalize
-			else:
-				frame[0][:-1] = vectorsUnit[i-1]
-
-			# calculate frame from prevFrame
-			upL = prevFrame[1][:-1] - 2*np.dot( vectorsUnit[i-1], prevFrame[1][:-1] )*vectorsUnit[i-1]
-			frL = prevFrame[0][:-1] - 2*np.dot( vectorsUnit[i-1], prevFrame[0][:-1] )*vectorsUnit[i-1]
-			v2 = frame[0][:-1] - frL
-			c2 = np.dot(v2,v2)
-			frame[1][:-1] = upL - (2.0/c2)*np.dot(v2,upL)*v2
-
-			frame[2][:-1] = np.cross(frame[0][:-1],frame[1][:-1])
-			frame[3][:-1] = path[i]
-
-			prevFrame = np.copy(frame)
-			#sys.stderr.write("i "+str(i)+"\n")
-			#sys.stderr.write("attributes[i] "+str(attributes[i])+"\n")
-			frame[:-1,:-1]*=attributes[i][lightningBoltNode.LP_kRadius]
-			branchFrames[i] = frame
-
-		# multiply all the circles coordinates by the frame base coordinates along the path so we get all the points in one move yeah
-		points.extend([ coord for k in range(len(circles)) for point in (np.dot(circles[k],branchFrames[k])).tolist() for coord in point  ] )
-
-	numVertices = len(points)/4
-	numFaces = len(facesCount)
-
-
-	scrUtil = OpenMaya.MScriptUtil()
-	scrUtil.createFromList( points, len(points))
-	Mpoints = OpenMaya.MFloatPointArray( scrUtil.asDouble4Ptr(), numVertices)
-
-	scrUtil.createFromList(facesConnect, len(facesConnect))
-	MfaceConnects = OpenMaya.MIntArray( scrUtil.asIntPtr() , len(facesConnect))
-
-	scrUtil.createFromList(facesCount, len(facesCount))
-	MfacesCount = OpenMaya.MIntArray( scrUtil.asIntPtr(), numFaces)
-	
-	dataCreator = OpenMaya.MFnMeshData()
-	outData = dataCreator.create()
-	meshFS = OpenMaya.MFnMesh()
-
-
-	meshFS.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
-
 	return outData
 
 def loadGeneralLightningScript():
@@ -392,16 +294,8 @@ global proc AElightningboltTemplate( string $nodeName )
 
 	# let's have the lightningModule here as a static
 	lightningModule = loadGeneralLightningScript()
-	# some shortcuts
-	LMProcessor = lightningModule.lightningBoltProcessor
-	# shortcut to call pseudo-enum
-	LP_kRadius = LMProcessor.eAPV.radius
-	LP_kIntensity = LMProcessor.eAPV.intensity
-	LP_kOffset = LMProcessor.eAPV.offset
-	LP_kElevation = LMProcessor.eAPV.elevation
-	LP_kElevationRand = LMProcessor.eAPV.elevationRand
-	LP_kChildLength = LMProcessor.eAPV.childLength
-
+	# shortcuts
+	LMLP = lightningModule.lightningBoltProcessor
 
 	# defaults
 	defaultDetailValue = 1
@@ -413,7 +307,7 @@ global proc AElightningboltTemplate( string $nodeName )
 
 	def __init__(self):
 		OpenMayaMPx.MPxNode.__init__(self)
-		self.LightningProcessor = lightningBoltNode.LMProcessor(mayaLightningMesher)
+		self.LightningProcessor = lightningBoltNode.LMLP(mayaLightningMesher)
 
 	def compute(self, plug, data):
 
@@ -432,12 +326,12 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempElevationRandRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRamp, thisNode,data)
 
 			self.LightningProcessor.setDetail(tempDetail)
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kRadius ), tempRadiusRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kIntensity ), tempIntensityRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kOffset ), tempOffsetRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kChildLength ), tempChildLengthRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevation ), tempElevationRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LP_kElevationRand ), tempElevationRandRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.radius ), tempRadiusRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.intensity ), tempIntensityRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.offset ), tempOffsetRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.childLength ), tempChildLengthRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.elevation ), tempElevationRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.elevationRand ), tempElevationRandRamp )
 
 
 			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.samplingDummyOut, thisNode,data)
@@ -499,12 +393,12 @@ global proc AElightningboltTemplate( string $nodeName )
 
 
 			# load the inputs of the node into the processor			
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kRadius, tempRadiusMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kIntensity, tempIntensityMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kOffset, tempOffsetMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevation, tempElevationMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kElevationRand, tempElevationRandMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LP_kChildLength, tempChildLengthMult*cvLength )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.radius, tempRadiusMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.intensity, tempIntensityMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.offset, tempOffsetMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.elevation, tempElevationMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.elevationRand, tempElevationRandMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.childLength, tempChildLengthMult*cvLength )
 
 			#sys.stderr.write("vector "+str(tempVectorStart.x)+" "+str(tempVectorStart.y)+" "+str(tempVectorStart.z)+"\n")
 
@@ -632,10 +526,7 @@ def nodeInitializer():
 def cleanupClass():
 	delattr(lightningBoltNode,'defaultDetailValue')
 	delattr(lightningBoltNode,'lightningModule')
-	delattr(lightningBoltNode,'LMProcessor')
-	delattr(lightningBoltNode,'LP_kRadius')
-	delattr(lightningBoltNode,'LP_kIntensity')
-	delattr(lightningBoltNode,'LP_kOffset')
+	delattr(lightningBoltNode,'LMLP')
 	delattr(lightningBoltNode,'hlp')
 
 # initialize the script plug-in
