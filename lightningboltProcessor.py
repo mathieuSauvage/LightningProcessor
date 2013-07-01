@@ -18,8 +18,6 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
-- implementing the transfert of attribute
-- implementing the intensity with vertex color
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
 - good noise
 - clean the inputs that are hardcoded like tubeSide
@@ -35,15 +33,15 @@ import sys
 import time
 
 class LBP_msCommandException(Exception):
-    def __init__(self,message):
-        self.message = '[LBP] '+message
-    
-    def __str__(self):
-        return self.message
+	def __init__(self,message):
+		self.message = '[LBP] '+message
+	
+	def __str__(self):
+		return self.message
 
 def enum(*sequential, **named):
-    enums = dict(zip(sequential, range(len(sequential))), **named)
-    return type('Enum', (), enums)
+	enums = dict(zip(sequential, range(len(sequential))), **named)
+	return type('Enum', (), enums)
 
 class avgTimer:
 	def __init__( self, numValues ):
@@ -63,17 +61,17 @@ class avgTimer:
 		return self.average()
 
 def arndSphereVect(N):
-    """Generate N random points on a unit sphere, equally spaced on the
-    surface of the sphere, and return them as columns of an array.
-    """   
-    sph = np.empty( (N,3), np.float32 )
-    
-    sph[:,2] = np.random.uniform(-1.0,1.0,N) # z-coordinates
-    z2 = np.sqrt(1.0 - sph[:,2]**2)
-    phi = (2.0 * math.pi) * np.random.random( N )
-    sph[:,0] = z2 * np.cos(phi) # x 
-    sph[:,1] = z2 * np.sin(phi) # y
-    return sph
+	"""Generate N random points on a unit sphere, equally spaced on the
+	surface of the sphere, and return them as columns of an array.
+	"""   
+	sph = np.empty( (N,3), np.float32 )
+	
+	sph[:,2] = np.random.uniform(-1.0,1.0,N) # z-coordinates
+	z2 = np.sqrt(1.0 - sph[:,2]**2)
+	phi = (2.0 * math.pi) * np.random.random( N )
+	sph[:,0] = z2 * np.cos(phi) # x 
+	sph[:,1] = z2 * np.sin(phi) # y
+	return sph
 
 # TODO function to return an array of elevation Vectors
 '''
@@ -89,6 +87,264 @@ def arndSphereElevation( N, elevation, amplitude ):
 
 def generateRandomParams( seeds ):
 	pass
+
+def dot2d(g, x, y):
+	return g[0]*x + g[1]*y
+
+_CONST1 = 0.5 * (math.sqrt(3.0) - 1.0)
+_CONST2 = (3.0 - math.sqrt(3.0)) / 6.0
+
+permutation = np.array([151,160,137,91,90,15, 
+	131,13,201,95,96,53,194,233,7,225,140,36,103,30,69,142,8,99,37,240,21,10,23, 
+	190,6,148,247,120,234,75,0,26,197,62,94,252,219,203,117,35,11,32,57,177,33, 
+	88,237,149,56,87,174,20,125,136,171,168,68,175,74,165,71,134,139,48,27,166, 
+	77,146,158,231,83,111,229,122,60,211,133,230,220,105,92,41,55,46,245,40,244, 
+	102,143,54,65,25,63,161,1,216,80,73,209,76,132,187,208,89,18,169,200,196, 
+	135,130,116,188,159,86,164,100,109,198,173,186,3,64,52,217,226,250,124,123, 
+	5,202,38,147,118,126,255,82,85,212,207,206,59,227,47,16,58,17,182,189,28,42, 
+	223,183,170,213,119,248,152,2,44,154,163,70,221,153,101,155,167,43,172,9, 
+	129,22,39,253,9,98,108,110,79,113,224,232,178,185,112,104,218,246,97,228, 
+	251,34,242,193,238,210,144,12,191,179,162,241, 81,51,145,235,249,14,239,107, 
+	49,192,214,31,181,199,106,157,184,84,204,176,115,121,50,45,127,4,150,254, 
+	138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180] )
+
+class simpNoise():
+	"""The gradients are the midpoints of the vertices of a cube."""
+	_grad3 = np.array([
+	[1,1,0], [-1,1,0], [1,-1,0], [-1,-1,0],
+	[1,0,1], [-1,0,1], [1,0,-1], [-1,0,-1],
+	[0,1,1], [0,-1,1], [0,1,-1], [0,-1,-1]], np.int)
+
+	def __init__(self, seed=0):
+		#sys.stderr.write('simpNoise.permutation'+str(permutation) +'\n' )
+
+		self.nprndState = np.random.RandomState(seed)
+
+		np.random.seed( seed )
+		test = np.array([5,7,2,4], np.int )
+		np.random.shuffle( test )
+
+		#sys.stderr.write('test '+str(test) +'\n' )
+
+		#sys.stderr.write('self.nprndState.shuffle(permutation) '+str(self.nprndState.shuffle(permutation)) +'\n' )
+		self.permX = permutation.copy()
+		self.permY = permutation.copy()
+		self.permZ = permutation.copy()
+		self.permW = permutation.copy()
+		self.nprndState.shuffle(self.permX)
+		self.nprndState.shuffle(self.permY)
+		self.nprndState.shuffle(self.permZ)
+		self.nprndState.shuffle(self.permW)
+
+		self.permX = np.tile( self.permX , 2)
+		#sys.stderr.write('self.permX'+str(self.permX) +'\n' )
+
+		self.permY = np.tile( self.permY , 2)
+		self.permZ = np.tile( self.permZ , 2)
+		self.permW = np.tile( self.permY , 2)
+
+	
+	def in2D_outVect( self, xSamples, ySamples, noiseCoords ):
+		# Noise contributions from the three corners
+		contrib = np.zeros( (len(xSamples),3,3) , np.float) # samples, coord(X,Y,Z), contrib
+		
+		# Skew the input space to determine which simplex cell we're in
+		F2 = _CONST1#0.5 * (math.sqrt(3.0) - 1.0)
+		# Hairy skew factor for 2D
+
+		s2 = noiseCoords.sum(-1)*F2#------------
+		ij2 = noiseCoords.copy()#------------
+		ij2.transpose((1,0))[:] += s2#------------
+		ij2 = ij2.astype(int)#------------
+
+		G2 = _CONST2#(3.0 - math.sqrt(3.0)) / 6.0
+		t2 = ij2.sum(-1).astype(float) * G2 #------------
+
+		# Unskew the cell origin back to (x,y) space
+		XY02 = ij2.copy().astype(float)#------------
+		XY02.transpose((1,0))[:] -= t2#------------
+
+		# The x,y distances from the cell origin
+		coord02 = noiseCoords - XY02#------------
+
+		# For the 2D case, the simplex shape is an equilateral triangle.
+		# Determine which simplex we are in.
+		
+		# Offsets for second (middle) corner of simplex in (i,j) coords
+		positiveIds2 = np.where( coord02[:,0]>coord02[:,1] )#------------
+		ij12 = np.tile( [0,1], (len(noiseCoords),1))#------------
+		ij12[positiveIds2] = [1,0]#------------
+
+		# A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+		# a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+		# c = (3-sqrt(3))/6
+		coord12 = coord02 - ij12 + G2#------------
+		#x1 = x0 - i1 + G2       # Offsets for middle corner in (x,y) unskewed coords
+		#y1 = y0 - j1 + G2
+
+		coord22 = coord02.copy() + (2.0 * G2 - 1.0)#------------
+		#x2 = x0 + (2.0 * G2 - 1.0) # Offsets for last corner in (x,y) unskewed coords
+		#y2 = y0 + (2.0 * G2 - 1.0)
+
+		Gcoord02 = np.array( [coord02,coord02,coord02] )
+		Gcoord02 = Gcoord02.transpose( (1,0,2) )
+		#sys.stderr.write('Gcoord02 '+str(Gcoord02) +'\n' )
+
+		Gcoord12 = np.array( [coord12,coord12,coord12] )
+		Gcoord12 = Gcoord12.transpose( (1,0,2) )
+		#sys.stderr.write('Gcoord12 '+str(Gcoord12) +'\n' )
+
+		Gcoord22 = np.array( [coord22,coord22,coord22] )
+		Gcoord22 = Gcoord22.transpose( (1,0,2) )
+		#sys.stderr.write('Gcoord22 '+str(Gcoord22) +'\n' )
+
+		# Work out the hashed gradient indices of the three simplex corners
+		ii = ij2[:,0] & 255# i & 255
+		jj = ij2[:,1] & 255#j & 255
+
+		#sys.stderr.write('jj '+str(jj) +'\n' )
+		#sys.stderr.write('jj+j1 '+str(jj+j1) +'\n' )
+
+		gi0 = np.array( [ self.permX[ii+self.permX[jj]], self.permY[ii+self.permY[jj]], self.permZ[ii+self.permZ[jj]] ] ) % 12
+		#sys.stderr.write('gi0'+str(gi0) +'\n' )
+		gi0 = gi0.T
+		#sys.stderr.write('gi0.T'+str(gi0) +'\n' )
+
+		gi1 = np.array( [ self.permX[ii+ij12[:,0]+self.permX[jj+ij12[:,1]]], self.permY[ii+ij12[:,0]+self.permY[jj+ij12[:,1]]], self.permZ[ii+ij12[:,0]+self.permZ[jj+ij12[:,1]]] ] ) % 12
+		#sys.stderr.write('gi1'+str(gi1) +'\n' )
+		gi1 = gi1.T
+		#sys.stderr.write('gi1T'+str(gi1) +'\n' )
+
+		gi2 = np.array( [ self.permX[ii+1+self.permX[jj+1]], self.permY[ii+1+self.permY[jj+1]], self.permZ[ii+1+self.permZ[jj+1]]] ) % 12
+		gi2 = gi2.T
+
+		# Calculate the contribution from the three corners
+		#t0 = 0.5 - x0**2 - y0**2
+		t0 = .5 - (coord02**2).sum(-1)
+		indPos = np.where( t0>=0.0 )
+		t0Pos = t0[indPos]**3
+		Gt0Pos = np.array( [t0Pos, t0Pos, t0Pos] )
+		Gt0Pos = Gt0Pos.T		
+		t = (simpNoise._grad3[ gi0[indPos] ])[:,:,:-1]
+		contrib[indPos,:,0] = Gt0Pos* (t*Gcoord02[indPos]).sum(-1)
+
+		t1 = .5 - (coord12**2).sum(-1)
+		indPos = np.where( t1>=0.0 )
+		t1Pos = t1[indPos]**3
+		Gt1Pos = np.array( [t1Pos, t1Pos, t1Pos] )
+		Gt1Pos = Gt1Pos.T
+		t = (simpNoise._grad3[ gi1[indPos] ])[:,:,:-1]
+		contrib[indPos,:,1] = Gt1Pos* (t*Gcoord12[indPos]).sum(-1)
+		#sys.stderr.write('contrib2 '+str( contrib[indPos,:,1]  ) +'\n' )
+
+		t2 = .5 - (coord22**2).sum(-1)
+		indPos = np.where( t2>=0.0 )
+		t2Pos = t2[indPos]**3
+		Gt2Pos = np.array( [t2Pos, t2Pos, t2Pos] )
+		Gt2Pos = Gt2Pos.T
+		t = (simpNoise._grad3[ gi2[indPos] ])[:,:,:-1]
+		contrib[indPos,:,2] = Gt2Pos* (t*Gcoord22[indPos]).sum(-1)
+		#sys.stderr.write('contrib3 '+str( contrib[indPos,:,2]  ) +'\n' )
+
+		return 70.0*(contrib.sum(-1))
+
+
+	def raw_noise_2dVector(self, x, y):
+		"""2D Raw Simplex noise."""
+		# Noise contributions from the three corners
+		n0 = [0]*3
+		n1 = [0]*3
+		n2 = [0]*3
+
+		#n0, n1, n2 = 0.0, 0.0, 0.0
+
+		# Skew the input space to determine which simplex cell we're in
+		F2 = _CONST1#0.5 * (math.sqrt(3.0) - 1.0)
+		# Hairy skew factor for 2D
+		s = (x + y) * F2
+		i = int(x + s)
+		j = int(y + s)
+
+		G2 = _CONST2#(3.0 - math.sqrt(3.0)) / 6.0
+		t = float(i + j) * G2
+		# Unskew the cell origin back to (x,y) space
+		X0 = i - t
+		Y0 = j - t
+		# The x,y distances from the cell origin
+		x0 = x - X0
+		y0 = y - Y0
+
+		# For the 2D case, the simplex shape is an equilateral triangle.
+		# Determine which simplex we are in.
+		i1, j1 = 0, 0 # Offsets for second (middle) corner of simplex in (i,j) coords
+		if x0 > y0: # lower triangle, XY order: (0,0)->(1,0)->(1,1)
+			i1 = 1
+			j1 = 0
+		else:        # upper triangle, YX order: (0,0)->(0,1)->(1,1)
+			i1 = 0
+			j1 = 1
+
+		# A step of (1,0) in (i,j) means a step of (1-c,-c) in (x,y), and
+		# a step of (0,1) in (i,j) means a step of (-c,1-c) in (x,y), where
+		# c = (3-sqrt(3))/6
+		x1 = x0 - i1 + G2       # Offsets for middle corner in (x,y) unskewed coords
+		y1 = y0 - j1 + G2
+		x2 = x0 - 1.0 + 2.0 * G2  # Offsets for last corner in (x,y) unskewed coords
+		y2 = y0 - 1.0 + 2.0 * G2
+
+		# Work out the hashed gradient indices of the three simplex corners
+		ii = int(i) & 255
+		jj = int(j) & 255
+		gi0 = [0]*3
+		gi1 = [0]*3
+		gi2 = [0]*3
+		gi0[0] = self.permX[ii+self.permX[jj]] % 12
+		gi1[0] = self.permX[ii+i1+self.permX[jj+j1]] % 12
+		gi2[0] = self.permX[ii+1+self.permX[jj+1]] % 12
+
+		gi0[1] = self.permY[ii+self.permY[jj]] % 12
+		gi1[1] = self.permY[ii+i1+self.permY[jj+j1]] % 12
+		gi2[1] = self.permY[ii+1+self.permY[jj+1]] % 12
+
+		gi0[2] = self.permZ[ii+self.permZ[jj]] % 12
+		gi1[2] = self.permZ[ii+i1+self.permZ[jj+j1]] % 12
+		gi2[2] = self.permZ[ii+1+self.permZ[jj+1]] % 12
+
+		# Calculate the contribution from the three corners
+		t0 = 0.5 - x0*x0 - y0*y0
+		if t0 < 0:
+			pass
+		else:
+			t0 *= t0*t0
+			n0[0] = t0 * dot2d(simpNoise._grad3[gi0[0]], x0, y0)
+			n0[1] = t0 * dot2d(simpNoise._grad3[gi0[1]], x0, y0)
+			n0[2] = t0 * dot2d(simpNoise._grad3[gi0[2]], x0, y0)
+			#sys.stderr.write('contrib1 '+str( n0[0]  ) +' '+str(n0[1])+' '+str(n0[2]) +'\n' )
+
+		t1 = 0.5 - x1*x1 - y1*y1
+		if t1 < 0:
+			pass
+		else:
+			t1 *= t1*t1
+			n1[0] = t1 * dot2d(simpNoise._grad3[gi1[0]], x1, y1)
+			n1[1] = t1 * dot2d(simpNoise._grad3[gi1[1]], x1, y1)
+			n1[2] = t1 * dot2d(simpNoise._grad3[gi1[2]], x1, y1)
+			#sys.stderr.write('contrib2 '+str( n1[0]  ) +' '+str(n1[1])+' '+str(n1[2]) +'\n' )
+
+		t2 = 0.5 - x2*x2-y2*y2
+		if t2 < 0:
+			pass
+		else:
+			t2 *= t2*t2
+			n2[0] = t2 * dot2d(simpNoise._grad3[gi2[0]], x2, y2)
+			n2[1] = t2 * dot2d(simpNoise._grad3[gi2[1]], x2, y2)
+			n2[2] = t2 * dot2d(simpNoise._grad3[gi2[2]], x2, y2)
+			#sys.stderr.write('contrib3 '+str( n2[0]  ) +' '+str(n2[1])+' '+str(n2[2]) +'\n' )
+
+		# Add contributions from each corner to get the final noise value.
+		# The result is scaled to return values in the interval [-1,1].
+		return [70.0 * (n0[0] + n1[0] + n2[0]), 70.0 * (n0[1] + n1[1] + n2[1]), 70.0 * (n0[2] + n1[2] + n2[2]) ]
+
 
 class nRand():
 	def __init__(self, seed=0):
@@ -129,9 +385,6 @@ class nRand():
 
 def npaRandSphereElevation( aElevation, aAmplitude, aPhi, aAmplitudeRand,  N ):
 	sphPoints = np.empty( (N,3), np.float32 )
-	#sys.stderr.write( 'aAmplitude '+str(aAmplitude)+'\n' )
-	#sys.stderr.write( 'aAmplitudeRand '+str(aAmplitudeRand)+'\n' )
-	sys.stderr.write( 'mult '+str(aAmplitude*aAmplitudeRand)+'\n' )
 	theta = np.arccos( np.clip( aAmplitude*aAmplitudeRand - 2.0*aElevation + 1.0, -1.0,1.0 ))
 	sphPoints[:,1] = sphPoints[:,2] = np.sin( theta )
 	sphPoints[:,0] =  np.cos( theta )
@@ -141,7 +394,6 @@ def npaRandSphereElevation( aElevation, aAmplitude, aPhi, aAmplitudeRand,  N ):
 
 
 class lightningBoltProcessor:
-
 	# Along Path values Enum (attributes transmitted to children by mult)
 	eAPV = enum('radius', 'intensity', 'offset', 'childLength', 'elevation', 'elevationRand', 'max')
 
@@ -149,7 +401,9 @@ class lightningBoltProcessor:
 	eV = enum('numChildrens', 'randNumChildrens', 'branchingTimeMult', 'max')
 
 	# Generic Values enum (no transmitted by function)
-	eGV = enum('seedBranching', 'max')
+	# seedBranching is the seed that drive the number of random childs and their position along the path
+	# seedShape is the seed that drive the shape of the tube chaos
+	eGV = enum('seedBranching', 'seedShape', 'max')
 
 	def __init__( self, outSoftwareFunc = None ):
 		self.outSoftwareFunc = outSoftwareFunc
@@ -184,6 +438,7 @@ class lightningBoltProcessor:
 		self.setValue(lightningBoltProcessor.eV.numChildrens, 2.0 ) 
 		self.setValue(lightningBoltProcessor.eV.randNumChildrens, 2.0 ) 
 		self.setGenericValue(lightningBoltProcessor.eGV.seedBranching, 437 )
+		self.setGenericValue(lightningBoltProcessor.eGV.seedShape, 20 )
 		self.setAPVTransfert( lightningBoltProcessor.eAPV.radius, 0.25)
 
 	def setDetail( self, detail):
@@ -260,7 +515,30 @@ class lightningBoltProcessor:
 		#sys.stderr.write('APArray '+str(APArray)+'\n')
 
 		# get the a random vector for every path point (that will offset the position of seedPath)
-		offsetArray = (arndSphereVect(totalBatchPoints)).reshape(batchSize,self.maxPoints,3)
+		#simp = simpNoise(0)
+
+		shapeTime = branchingTime
+		x = np.array( [shapeTime]*self.maxPoints , np.float32 )
+		y = np.linspace(0.0,1.0,self.maxPoints)
+		
+		noisePos = np.empty( (self.maxPoints,2), np.float32 )
+		noisePos[:,0] = shapeTime
+		noisePos[:,1] = np.linspace(0.0,1.0,self.maxPoints)
+
+		#res = simp.in2D_outVect(x, y, noisePos)
+		#sys.stderr.write('res '+str(res)+'\n')
+		simp = simpNoise(0)
+		for i in range(len(y)) :
+			res2 = simp.raw_noise_2dVector( shapeTime, y[i] )
+			sys.stderr.write('res2 '+str(res2)+'\n')
+		offsetArray = np.empty( (batchSize,self.maxPoints,3), np.float32 )
+		for i in range(batchSize):
+			simp = simpNoise(0)
+			offsetArray[i] = simp.in2D_outVect(x, y, noisePos)
+			sys.stderr.write('offsetArray[i] '+str(offsetArray[i])+'\n')
+
+
+		#offsetArray = (arndSphereVect(totalBatchPoints)).reshape(batchSize,self.maxPoints,3)
 		#sys.stderr.write('offsetArray '+str(offsetArray)+'\n')
 		
 		seedPathPointsView = seedPath.reshape(batchSize,self.maxPoints,3)
@@ -371,7 +649,7 @@ class lightningBoltProcessor:
 			GValues[:,lightningBoltProcessor.eGV.seedBranching] += np.floor( Values[:,lightningBoltProcessor.eV.branchingTimeMult]*branchingTime )
 
 			allChildsParams = []
-			allChildsBranchParentId = ([],[])
+			allChildsBranchParentId = []
 			allRandValuesForSpherePt = []
 			# we have to loop through the branches, no choice to generate the randoms values with a seed for each branch
 			for i in range(batchSize): 
@@ -380,9 +658,9 @@ class lightningBoltProcessor:
 				allChildsParams.append( randBranch.npaRandEpsilon(float(i*self.maxPoints), float((i+1)*self.maxPoints-1), Values[i,lightningBoltProcessor.eV.numChildrens] ) )
 				# random values used to generate random direction from parent branch
 				allRandValuesForSpherePt.append( randBranch.npaRand(0.0,2.0,(2,Values[i,lightningBoltProcessor.eV.numChildrens]) ) )
-				allChildsBranchParentId[0].extend( [i]*Values[i,lightningBoltProcessor.eV.numChildrens] )
+				allChildsBranchParentId.extend( [i]*Values[i,lightningBoltProcessor.eV.numChildrens] )
 
-			totalChildNumber = len(allChildsBranchParentId[0])
+			totalChildNumber = len(allChildsBranchParentId)
 
 			APVView = APArray.reshape(-1,lightningBoltProcessor.eAPV.max)
 			#sys.stderr.write('APArray '+str(APArray)+'\n')
@@ -400,10 +678,10 @@ class lightningBoltProcessor:
 			APVMultChilds = APVViewT0 + blend*( APVView[indexT0+1] - APVViewT0 )
 			APVMultChilds *= self.APVTransfert # transfert multiply
 
-			ValuesChilds = Values[allChildsBranchParentId[0]]
+			ValuesChilds = Values[allChildsBranchParentId]
 			ValuesChilds *= self.VTransfert # transfert multiply
 
-			GValuesChilds = GValues[allChildsBranchParentId[0]]
+			GValuesChilds = GValues[allChildsBranchParentId]
 
 			#sys.stderr.write('APVMultChilds '+str(APVMultChilds)+'\n')
 
@@ -465,11 +743,11 @@ class lightningBoltProcessor:
 			#sys.stderr.write('childSeedPaths'+str(childSeedPaths)+'\n')
 			#v2[:,np.newaxis]*p2
 			#childFrames[:,0,np.newaxis]*seedPathStep[:,np.newaxis]
-			sys.stderr.write('childFrames'+str(childFrames) +'\n' )
-			sys.stderr.write('APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]'+str(APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]) +'\n' )
+			#sys.stderr.write('childFrames'+str(childFrames) +'\n' )
+			#sys.stderr.write('APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]'+str(APVMultChilds[:,lightningBoltProcessor.eAPV.childLength]) +'\n' )
 			childFrames *= APVMultChilds[:,lightningBoltProcessor.eAPV.childLength,np.newaxis]
 			seedPathChilds = childFrames[:,np.newaxis]*seedPathStep[:,np.newaxis]
-			sys.stderr.write('seedPathChilds'+str(seedPathChilds) +'\n' )
+			#sys.stderr.write('seedPathChilds'+str(seedPathChilds) +'\n' )
 
 			seedPathT0 = seedPath[indexT0]
 			startPoints = seedPathT0 + blend*( seedPath[indexT0+1] - seedPathT0 )
@@ -486,7 +764,7 @@ class lightningBoltProcessor:
 			childsBatch = ( totalChildNumber, seedPathChilds.reshape(-1,3) , APVMultChilds.reshape(1,totalChildNumber,1,-1), ValuesChilds, GValuesChilds )
 			#batchSize, seedPath, APVMults, Values, GValues = batch
 			
-			sys.stderr.write('APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]'+str(APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]) +'\n' )
+			#sys.stderr.write('APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]'+str(APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]) +'\n' )
 
 
 		return frames, APArray[0,:,:,lightningBoltProcessor.eAPV.intensity], childsBatch
@@ -509,7 +787,6 @@ class lightningBoltProcessor:
 
 		# intensity color template
 		colorTemplate = np.ones( (tubeSide,4), np.float32 )
-
 
 		# --- create the first datas (seedPath, attributes ) to process 
 		startSeedPath = np.array( self.startSeedPoints )
@@ -552,23 +829,16 @@ class lightningBoltProcessor:
 
 		# here deduce points from frame and circles and add them to resultPoints
 		# transform a circle of point for each frame
-		#circles = np.tile(pointsOfCircle,(len(resultFrames[0]),1,1)) # make enough circles
-		#sys.stderr.write('resultFrames[0] '+str(resultFrames[0])+'\n')
-
-		# avec v le vecteur et u la matrice
-		# np.dot(v,u) donne les coordonnees transformee par u
-		#circles = circles.reshape(-1,4)
-		#frameV = resultFrames[0].reshape(-1,4,4)
 		resultPoints = [ coord for array in resultFrames for coord in ((np.inner(array,pointsOfCircle)).transpose(0,2,1)).reshape(-1).tolist() ]
 
-		sys.stderr.write('colorTemplate '+str(colorTemplate)+'\n')
-		sys.stderr.write('resultIntensities[0] '+str(resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
-		sys.stderr.write('resultIntensities[0]*colorTemplate '+str(colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
+		#sys.stderr.write('colorTemplate '+str(colorTemplate)+'\n')
+		#sys.stderr.write('resultIntensities[0] '+str(resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
+		#sys.stderr.write('resultIntensities[0]*colorTemplate '+str(colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
 		resultIntensityColors = [ coord for array in resultIntensities for coord in (colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis]).reshape(-1).tolist() ]
 		#resultPoints = [ coord for array in resultFrames for k in range(len(array)) for point in (np.dot(circles[k],array[k])).tolist() for coord in point  ]
 
 		#sys.stderr.write('resultPoints '+str(resultPoints)+'\n')
-		sys.stderr.write('resultIntensityColors '+str(resultIntensityColors)+'\n')
+		#sys.stderr.write('resultIntensityColors '+str(resultIntensityColors)+'\n')
 		#sys.stderr.write('num points '+str(len(resultPoints))+'\n')
 
 		resultLoopingPoints = [] # TODO
