@@ -18,6 +18,7 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
+- le transfert offset prend sa valeur de base sur le path du tube, c'est pas correct... il faut prendre la valeur max
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
 - good noise
 - clean the inputs that are hardcoded like tubeSide
@@ -676,7 +677,7 @@ class lightningBoltProcessor:
 			#sys.stderr.write('GValues[:,lightningBoltProcessor.eGV.seedBranching] '+str(GValues[:,lightningBoltProcessor.eGV.seedBranching])+'\n')
 			GValues[:,lightningBoltProcessor.eGV.seedBranching] += np.floor( Values[:,lightningBoltProcessor.eV.branchingTimeMult]*branchingTime )
 
-			allChildsParams = []
+			#allChildsParams = []
 			allChildsBranchParentId = []
 			#allRandValuesForSpherePt = []
 			#allSeedBranching = []
@@ -685,11 +686,16 @@ class lightningBoltProcessor:
 			for i in range(batchSize): 
 				randBranch = nRand(GValues[i,lightningBoltProcessor.eGV.seedBranching])
 				Values[i,lightningBoltProcessor.eV.numChildrens] += randBranch.randInt(0, Values[i,lightningBoltProcessor.eV.randNumChildrens] )
-				allChildsParams.extend( (randBranch.npaRandEpsilon(float(i*self.maxPoints), float((i+1)*self.maxPoints-1), Values[i,lightningBoltProcessor.eV.numChildrens] )).tolist() )
-				# random values used to generate random direction from parent branch
-				randArray = randBranch.npaRand(0.0, 2.0, (Values[i,lightningBoltProcessor.eV.numChildrens], 4) )
+				#allChildsParams.extend( (randBranch.npaRandEpsilon(float(i*self.maxPoints), float((i+1)*self.maxPoints-1), Values[i,lightningBoltProcessor.eV.numChildrens] )).tolist() )
+
+				# index 0 : param childrens
+				# index 1,2 : phi, ampitude random values used to generate random direction from parent branch
+				# index 3,4 : seedBranching, seedShape
+				randArray = randBranch.npaRand(0.0, 2.0, (Values[i,lightningBoltProcessor.eV.numChildrens], 5) )
+				randArray[:,0]*=.5*float(self.maxPoints - 1)
+				randArray[:,0]+=float(i*self.maxPoints)
 				allRandValues.extend( randArray.tolist() )
-				sys.stderr.write('allRandValues '+str(allRandValues)+'\n')
+				#sys.stderr.write('allRandValues '+str(allRandValues)+'\n')
 
 				#allRandValuesForSpherePt.append( randBranch.npaRand(0.0,2.0,(2,Values[i,lightningBoltProcessor.eV.numChildrens]) ) )
 				allChildsBranchParentId.extend( [i]*Values[i,lightningBoltProcessor.eV.numChildrens] )
@@ -701,10 +707,10 @@ class lightningBoltProcessor:
 
 			APVView = APArray.reshape(-1,lightningBoltProcessor.eAPV.max)
 			#sys.stderr.write('APArray '+str(APArray)+'\n')
-			sys.stderr.write('allChildsParams '+str(allChildsParams)+'\n')
-			blend = np.array(allChildsParams, np.float32)
-			sys.stderr.write('blend '+str(blend)+'\n')
-			indexT0 = np.array(allChildsParams, np.uint32)
+			#sys.stderr.write('allChildsParams '+str(allChildsParams)+'\n')
+			blend = aChildRandomsArray[0,:]  #np.array(allChildsParams, np.float32)
+			#sys.stderr.write('blend '+str(blend)+'\n')
+			indexT0 = aChildRandomsArray[0,:].astype(np.uint32) #np.array(allChildsParams, np.uint32)
 			APVViewT0 = APVView[indexT0]
 			#sys.stderr.write('indexT0 '+str(indexT0)+'\n')
 			#sys.stderr.write('indexT0+1 '+str(indexT0+1)+'\n')
@@ -714,23 +720,23 @@ class lightningBoltProcessor:
 			#sys.stderr.write('APVView[indexT0]'+str(APVView[indexT0])+'\n')
 			#sys.stderr.write('blend*APVView[indexT0]'+str(blend*APVView[indexT0])+'\n')
 			APVMultChilds = APVViewT0 + blend*( APVView[indexT0+1] - APVViewT0 )
-			APVMultChilds *= self.APVTransfert # transfert multiply
+			APVMultChilds *= self.APVTransfert # transfert Along Path multiply
 
 			ValuesChilds = Values[allChildsBranchParentId]
-			ValuesChilds *= self.VTransfert # transfert multiply
+			ValuesChilds *= self.VTransfert # transfert Values multiply
 
 			GValuesChilds = GValues[allChildsBranchParentId]
 
 			# set the seeds of the childs
-			aAllSeeds = aChildRandomsArray[2:4,:]
+			aAllSeeds = aChildRandomsArray[3:5,:]
 			aAllSeeds *= 500000.0
 			aAllSeeds %= 1000000
 
-			sys.stderr.write('GValuesChilds '+str(GValuesChilds)+'\n')
+			#sys.stderr.write('GValuesChilds '+str(GValuesChilds)+'\n')
 			GValuesChilds[:,lightningBoltProcessor.eGV.seedBranching] = aAllSeeds[0]
 			GValuesChilds[:,lightningBoltProcessor.eGV.seedShape] = aAllSeeds[1]
-			sys.stderr.write('GValuesChilds[seedBranching] '+str(GValuesChilds[:,lightningBoltProcessor.eGV.seedBranching])+'\n')
-			sys.stderr.write('GValuesChilds[seedShape] '+str(GValuesChilds[:,lightningBoltProcessor.eGV.seedShape])+'\n')
+			#sys.stderr.write('GValuesChilds[seedBranching] '+str(GValuesChilds[:,lightningBoltProcessor.eGV.seedBranching])+'\n')
+			#sys.stderr.write('GValuesChilds[seedShape] '+str(GValuesChilds[:,lightningBoltProcessor.eGV.seedShape])+'\n')
 			
 
 			#sys.stderr.write('APVMultChilds '+str(APVMultChilds)+'\n')
@@ -772,8 +778,8 @@ class lightningBoltProcessor:
 		# now get the elevation for each child branch
 			#aPhiAndRandAmplitude = 	aChildRandomsArray[:2,:]
 			#aPhiAndRandAmplitude = np.array( allRandValuesForSpherePt)
-			aPhi = aChildRandomsArray[0,:] #aPhiAndRandAmplitude[0]
-			aAmplitudeRand = aChildRandomsArray[1,:] #aPhiAndRandAmplitude[1]
+			aPhi = aChildRandomsArray[1,:] #aPhiAndRandAmplitude[0]
+			aAmplitudeRand = aChildRandomsArray[2,:] #aPhiAndRandAmplitude[1]
 			aPhi*=np.pi 
 			aAmplitudeRand-=1.0 
 			randomVectors = npaRandSphereElevation( APVMultChilds[:,lightningBoltProcessor.eAPV.elevation], APVMultChilds[:,lightningBoltProcessor.eAPV.elevationRand],aPhi, aAmplitudeRand, aAmplitudeRand.size  )
@@ -820,7 +826,7 @@ class lightningBoltProcessor:
 
 		return frames, APArray[0,:,:,lightningBoltProcessor.eAPV.intensity], childsBatch
 
-	def process(self, maxGeneration, branchingTime, shapeTime ):
+	def process(self, maxGeneration, branchingTime, shapeTime, tubeSide ):
 		self.timer.start()
 
 		currentGeneration = 0
@@ -829,7 +835,7 @@ class lightningBoltProcessor:
 		normalAPV = self.APVInputs1
 
 		# circle template for tube extrusion
-		tubeSide = 4
+		#tubeSide = 4
 		pointsOfCircle = np.zeros( (4,tubeSide), np.float32 )
 		pointsOfCircle[1] = np.sin(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
 		pointsOfCircle[2] = np.cos(np.linspace(1.5*np.pi,-np.pi*.5, tubeSide, endpoint=False))
