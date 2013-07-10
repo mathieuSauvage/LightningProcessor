@@ -271,6 +271,7 @@ global proc AElightningboltTemplate( string $nodeName )
 	editorTemplate -beginScrollLayout;
 
 		editorTemplate -beginLayout "global parameters" -collapse 0;
+			editorTemplate -addControl "tubeSides";
 			editorTemplate -addControl "maxGeneration";
 			editorTemplate -addControl "detail";
 			editorTemplate -addControl "seedShape";
@@ -301,9 +302,10 @@ global proc AElightningboltTemplate( string $nodeName )
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "generation transfert multipliers" -collapse 0;
-			editorTemplate -addControl "transfertRadius";
 			editorTemplate -addControl "transfertTimeBranching";
 			editorTemplate -addControl "transfertTimeShape";
+			editorTemplate -addControl "transfertRadius";
+			editorTemplate -addControl "transfertOffset";			
 
 		editorTemplate -endLayout;
 
@@ -325,6 +327,7 @@ global proc AElightningboltTemplate( string $nodeName )
 	defaultMaxGeneration = 0
 	defaultNumChildren = 2
 	defaultNumChildrenRand = 2
+	defaultTubeSides = 4
 
 	#----------------------------------------------------------------------------	
 	# helpers to help manage attributes on a Maya node, all the helpers are "statics" methodes of the node	
@@ -370,6 +373,8 @@ global proc AElightningboltTemplate( string $nodeName )
 			thisNode = self.thisMObject()
 
 			# generic values
+			tempTubeSides = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.tubeSides, thisNode,data)
+
 			tempMaxGeneration = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.maxGeneration, thisNode,data)
 			tempShapeFrequency = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.shapeFrequency, thisNode,data)
 			tempNumChildren = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.numChildren, thisNode, data)
@@ -392,6 +397,7 @@ global proc AElightningboltTemplate( string $nodeName )
 
 			# transfert values
 			tempTransfertRadius = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertRadius, thisNode,data)
+			tempTransfertOffset = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertOffset, thisNode,data)
 			tempTransfertTimeBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertTimeBranching, thisNode,data)
 			tempTransfertTimeShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertTimeShape, thisNode,data)
 
@@ -456,6 +462,7 @@ global proc AElightningboltTemplate( string $nodeName )
 			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eV.shapeTimeMult, tempTransfertTimeShape )
 
 			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPV.radius, tempTransfertRadius )
+			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPV.offset, tempTransfertOffset )
 
 
 
@@ -468,7 +475,7 @@ global proc AElightningboltTemplate( string $nodeName )
 
 			self.LightningProcessor.initializeProcessor()
 			self.LightningProcessor.addSeedPointList(pointList)
-			outputData = self.LightningProcessor.process(tempMaxGeneration, tempTimeBranching.value(), tempTimeShape.value())
+			outputData = self.LightningProcessor.process(tempMaxGeneration, tempTimeBranching.value(), tempTimeShape.value(), tempTubeSides)
 
 			sys.stderr.write('end of compute\n')
 
@@ -510,6 +517,8 @@ def nodeInitializer():
 	lightningBoltNode.hlp = attCreationHlp(lightningBoltNode)
 
 	lightningBoltNode.hlp.createAtt( name = "inputCurve", fn=typedAttr, shortName="ic", type=OpenMaya.MFnData.kNurbsCurve, exceptAffectList=['samplingDummyOut'] )	
+
+	lightningBoltNode.hlp.createAtt( name = "tubeSides", fn=numAttr, shortName="tus", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultTubeSides, exceptAffectList=['samplingDummyOut'] )	
 
 	lightningBoltNode.hlp.createAtt( name = "maxGeneration", fn=numAttr, shortName="mg", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultMaxGeneration, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "detail", fn=numAttr, shortName="det", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultDetailValue )
@@ -554,6 +563,7 @@ def nodeInitializer():
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeShape", fn=numAttr, shortName="tts", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 	lightningBoltNode.hlp.createAtt( name = "transfertRadius", fn=numAttr, shortName="tr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "transfertOffset", fn=numAttr, shortName="to", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 
 #	lightningBoltNode.createAtt( name = "timeShape", fn=unitAttr, shortName="ts", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, outsAffectList=['outputMesh'] )	
