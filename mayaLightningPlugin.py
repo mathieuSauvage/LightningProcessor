@@ -355,12 +355,17 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempElevationRandRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRamp, thisNode,data)
 
 			self.LightningProcessor.setDetail(tempDetail)
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.radius ), tempRadiusRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.intensity ), tempIntensityRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.offset ), tempOffsetRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.childLength ), tempChildLengthRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.elevation ), tempElevationRamp )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPV.elevationRand ), tempElevationRandRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.radius ), tempRadiusRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.intensity ), tempIntensityRamp )
+			#setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.offset ), tempOffsetRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.childLength ), tempChildLengthRamp )
+			#setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.elevation ), tempElevationRamp )
+			#setupAPVInputFromRamp( self.LightningProcessor.getAPVariation1( lightningBoltNode.LMLP.eAPBR.elevationRand ), tempElevationRandRamp )
+
+			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE1( lightningBoltNode.LMLP.eAPSPE.offset ), tempOffsetRamp )
+
+			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE1( lightningBoltNode.LMLP.eAPSPE.elevation ), tempElevationRamp )
+			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE1( lightningBoltNode.LMLP.eAPSPE.elevationRand ), tempElevationRandRamp )
 
 
 			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.samplingDummyOut, thisNode,data)
@@ -439,30 +444,33 @@ global proc AElightningboltTemplate( string $nodeName )
 
 			sys.stderr.write('child length '+str(tempChildLengthMult*cvLength)+'\n')
 			# load the Along Path Values inputs of the node into the processor			
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.radius, tempRadiusMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.intensity, tempIntensityMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.offset, tempOffsetMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.elevation, tempElevationMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.elevationRand, tempElevationRandMult )
-			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPV.childLength, tempChildLengthMult*cvLength )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.radius, tempRadiusMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.intensity, tempIntensityMult )
+			#self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.offset, tempOffsetMult )
+			#self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.elevation, tempElevationMult )
+			#self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.elevationRand, tempElevationRandMult )
+			self.LightningProcessor.setAPVMult1( lightningBoltNode.LMLP.eAPBR.childLength, tempChildLengthMult*cvLength )
 
 			# load the Values inputs
-			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eV.shapeTimeMult, tempTimeShapeMultiplier )
-			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eV.branchingTimeMult, tempTimeBranchingMultiplier )
-			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eV.numChildrens, tempNumChildren )
-			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eV.randNumChildrens, tempNumChildrenRand )
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.shapeFrequency, tempShapeFrequency )
+
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.shapeTimeMult, tempTimeShapeMultiplier )
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.branchingTimeMult, tempTimeBranchingMultiplier )
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.numChildrens, tempNumChildren )
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.randNumChildrens, tempNumChildrenRand )
+			self.LightningProcessor.setValue( lightningBoltNode.LMLP.eGEN.offset, tempOffsetMult )
 
 			# load the Generic values
-			self.LightningProcessor.setGenericValue( lightningBoltNode.LMLP.eGV.shapeFrequency, tempShapeFrequency )
-			self.LightningProcessor.setGenericValue( lightningBoltNode.LMLP.eGV.seedShape, tempSeedShape )
-			self.LightningProcessor.setGenericValue( lightningBoltNode.LMLP.eGV.seedBranching, tempSeedBranching )
+			self.LightningProcessor.setSpecialBranchValue( lightningBoltNode.LMLP.eSPEBR.seedShape, tempSeedShape )
+			self.LightningProcessor.setSpecialBranchValue( lightningBoltNode.LMLP.eSPEBR.seedBranching, tempSeedBranching )
 
 			# load the Transfert values
-			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eV.branchingTimeMult, tempTransfertTimeBranching )
-			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eV.shapeTimeMult, tempTransfertTimeShape )
+			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eGEN.branchingTimeMult, tempTransfertTimeBranching )
+			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eGEN.shapeTimeMult, tempTransfertTimeShape )
+			self.LightningProcessor.setValueTransfert( lightningBoltNode.LMLP.eGEN.offset, tempTransfertOffset )
 
-			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPV.radius, tempTransfertRadius )
-			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPV.offset, tempTransfertOffset )
+			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPBR.radius, tempTransfertRadius )
+			#self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPBR.offset, tempTransfertOffset )
 
 
 
