@@ -18,11 +18,8 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
-- le transfert offset prend sa valeur de base sur le path du tube, c'est pas correct... il faut prendre la valeur max
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
-- good noise
-- clean the inputs that are hardcoded like tubeSide
-- more parameters, seed controls, etc...
+- faire une class de noise encore plus general, pouvant generer plusieure suite de nombre pour plusieures seeds
 ================================================================================
 '''
 
@@ -533,12 +530,13 @@ class lightningBoltProcessor:
 #sys.stderr.write('seedPathPointsView '+str(seedPathPointsView)+'\n')
 	def generate( self, batch, APBranchV, APSpeV, branchingTime, shapeTime, isLooping, doGenerateChilds ):
 		# unpack
-		batchSize, seedPath, APVMults, GenValues, SPEBRValues = batch
+		batchSize, seedPath, APBranchMults, GenValues, SPEBRValues = batch
 
-		#sys.stderr.write('APV '+str(APV)+'\n')
+		sys.stderr.write('APBranchV '+str(APBranchV)+'\n')
 		#sys.stderr.write('batchSize '+str(batchSize)+'\n')
 		#sys.stderr.write('seedPath '+str(seedPath)+'\n')
-		#sys.stderr.write('APVMults '+str(APVMults[0,:,0,lightningBoltProcessor.eAPV.childLength])+'\n')
+		testBranchMult = APBranchMults.reshape(batchSize,1,-1)
+		sys.stderr.write('APBranchMults '+str(testBranchMult)+'\n')
 		#sys.stderr.write('Values '+str(Values)+'\n')
 		#totalBatchPoints = len(seedPath) # this should be self.maxPoints*batchSize
 
@@ -546,14 +544,17 @@ class lightningBoltProcessor:
 		APVs = np.tile(APBranchV,(batchSize,1,1))
 
 		# get the final values at each path point ( the value from the ramp multiply by the multiplicator )
-		APArray = APVs * APVMults # the attribute path Array contain every attribute value at every point
+		APArray = APVs * APBranchMults # the attribute path Array contain every attribute value at every point
+		sys.stderr.write('Target '+str(APArray)+'\n')
+		#APArray = (testBranchMult*APBranchV)[np.newaxis,:]
+		sys.stderr.write('test '+str(testBranchMult*APBranchV)+'\n')
 		#sys.stderr.write('APArray '+str(APArray)+'\n')
 
 		# get the a random vector for every path point (that will offset the position of seedPath)
 		#simp = simpNoise(0)
 
 
-		sys.stderr.write('shapeTime '+str(shapeTime)+'\n')
+		#sys.stderr.write('shapeTime '+str(shapeTime)+'\n')
 		#sys.stderr.write('Values[:,lightningBoltProcessor.eV.shapeTimeMult] '+str(Values[:,lightningBoltProcessor.eV.shapeTimeMult])+'\n')
 		finalShapeTime = GenValues[lightningBoltProcessor.eGEN.shapeTimeMult]*shapeTime
 		#sys.stderr.write('finalShapeTime '+str(finalShapeTime)+'\n')
@@ -578,7 +579,7 @@ class lightningBoltProcessor:
 
 		for i in range(batchSize):			
 			simp = simpNoise( SPEBRValues[i,lightningBoltProcessor.eSPEBR.seedShape] )			
-			branchLength = APVMults[0,i,0,lightningBoltProcessor.eAPBR.childLength]
+			branchLength = APBranchMults[0,i,0,lightningBoltProcessor.eAPBR.childLength]
 			#sys.stderr.write('branchLength '+str(branchLength)+'\n')
 			noisePos[:,1] = np.linspace(0.0,branchLength*freq,self.maxPoints)
 
