@@ -270,7 +270,24 @@ def getPointListFromCurve( numPoints, fnCurve):
 
 		param += step
 	return res, fnCurve.length()
-		
+
+
+class ATTAccessor:
+	def __init__( self, helper, node, data ):
+		self.helper = helper
+		self.node = node
+		self.data = data
+
+	def get( self, att ):
+		return self.helper.getAttValueOrHdl( att, self.node, self.data )
+
+	def getIf( self, attTest, att ):
+		boolVal = self.get( attTest )
+		result = None
+		if boolVal:
+			result = self.get( att )
+		return result
+
 class lightningBoltNode(OpenMayaMPx.MPxNode):
 		
 	#----------------------------------------------------------------------------
@@ -332,12 +349,17 @@ global proc AElightningboltTemplate( string $nodeName )
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "Root Overrides" -collapse 0;
+
+			editorTemplate -addControl "timeShapeRootOverride";
+			editorTemplate -addControl "transfertTimeShapeRoot";
+
 			editorTemplate -addControl "offsetRootOverride";
 			editorTemplate -addControl "transfertOffsetRoot";
 			AEaddRampControl ($nodeName+".offsetRampRoot");
 
 			editorTemplate -addControl "numChildrenRootOverride";
 			editorTemplate -addControl "transfertNumChildrenRoot";
+			editorTemplate -addControl "transfertNumChildrenRandRoot";			
 
 			editorTemplate -addControl "elevationRootOverride";
 			AEaddRampControl ($nodeName+".elevationRampRoot");
@@ -370,7 +392,7 @@ global proc AElightningboltTemplate( string $nodeName )
 	# let's have the lightningModule here as a static
 	lightningModule = loadGeneralLightningScript()
 	# shortcuts
-	LMLP = lightningModule.lightningBoltProcessor
+	LPM = lightningModule.lightningBoltProcessor
 
 	# defaults
 	defaultDetailValue = 1
@@ -386,7 +408,7 @@ global proc AElightningboltTemplate( string $nodeName )
 
 	def __init__(self):
 		OpenMayaMPx.MPxNode.__init__(self)
-		self.LightningProcessor = lightningBoltNode.LMLP(mayaLightningMesher)
+		self.LP = lightningBoltNode.LPM(mayaLightningMesher)
 
 	def compute(self, plug, data):
 
@@ -394,55 +416,37 @@ global proc AElightningboltTemplate( string $nodeName )
 			sys.stderr.write('compute dummy\n')
 
 			thisNode = self.thisMObject()
+			acc = ATTAccessor( lightningBoltNode.hlp, thisNode, data )
 
 			# Basic Ramp Attribute to Sample
-			tempDetail = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.detail, thisNode,data)
-			tempRadiusRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRamp, thisNode,data)
-			tempIntensityRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityRamp, thisNode,data)
-			tempOffsetRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRamp, thisNode,data)
-			tempChildLengthRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthRamp, thisNode,data)
-			tempElevationRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRamp, thisNode,data)
-			tempElevationRandRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRamp, thisNode,data)
-			tempChildProbabilityRamp = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childProbabilityRamp, thisNode,data)
 
-			isRadiusRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRootOverride, thisNode,data)
-			tempRadiusRampRoot = None
-			if isRadiusRootOverrided:
-				tempRadiusRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRampRoot, thisNode,data)
+			tempDetail = acc.get(lightningBoltNode.detail)
+			tempRadiusRamp = acc.get(lightningBoltNode.radiusRamp)
+			tempIntensityRamp = acc.get(lightningBoltNode.intensityRamp)
+			tempOffsetRamp = acc.get(lightningBoltNode.offsetRamp)
+			tempChildLengthRamp = acc.get(lightningBoltNode.childLengthRamp)
+			tempElevationRamp = acc.get(lightningBoltNode.elevationRamp)
+			tempElevationRandRamp = acc.get(lightningBoltNode.elevationRandRamp)
+			tempChildProbabilityRamp = acc.get(lightningBoltNode.childProbabilityRamp)
 
-			isChildLengthRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthRootOverride, thisNode,data)
-			tempChildLengthRampRoot = None
-			if isChildLengthRootOverrided:
-				tempChildLengthRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthRampRoot, thisNode,data)
-
-			isIntensityRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityRootOverride, thisNode,data)
-			tempIntensityRampRoot = None
-			if isIntensityRootOverrided:
-				tempIntensityRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityRampRoot, thisNode,data)
-
-			isElevationRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRootOverride, thisNode,data)
-			tempElevationRampRoot = None
-			tempElevationRandRampRoot = None
-			if isElevationRootOverrided:
-				tempElevationRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRampRoot, thisNode,data)
-				tempElevationRandRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.elevationRandRampRoot, thisNode,data)
-
-			isOffsetRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRootOverride, thisNode,data)
-			tempOffsetRampRoot = None
-			if isOffsetRootOverrided:
-				tempOffsetRampRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRampRoot, thisNode,data)
+			tempRadiusRampRoot = acc.getIf( lightningBoltNode.radiusRootOverride, lightningBoltNode.radiusRampRoot )
+			tempChildLengthRampRoot = acc.getIf( lightningBoltNode.childLengthRootOverride, lightningBoltNode.childLengthRampRoot )
+			tempIntensityRampRoot = acc.getIf( lightningBoltNode.intensityRootOverride, lightningBoltNode.intensityRampRoot )
+			tempElevationRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRampRoot )
+			tempElevationRandRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRandRampRoot )
+			tempOffsetRampRoot = acc.getIf( lightningBoltNode.offsetRootOverride, lightningBoltNode.offsetRampRoot )
 
 			# ***** initialisation of the sizes of arrays in the Processor (everything depend on detail)
-			self.LightningProcessor.setDetail(tempDetail)
+			self.LP.setDetail(tempDetail)
 
-			setupAPVInputFromRamp( self.LightningProcessor.getAPBR( lightningBoltNode.LMLP.eAPBR.radius ), tempRadiusRamp, tempRadiusRampRoot )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPBR( lightningBoltNode.LMLP.eAPBR.intensity ), tempIntensityRamp, tempIntensityRampRoot )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPBR( lightningBoltNode.LMLP.eAPBR.childLength ), tempChildLengthRamp, tempChildLengthRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.radius ), tempRadiusRamp, tempRadiusRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.intensity ), tempIntensityRamp, tempIntensityRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.childLength ), tempChildLengthRamp, tempChildLengthRampRoot )
 
-			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE( lightningBoltNode.LMLP.eAPSPE.offset ), tempOffsetRamp, tempOffsetRampRoot )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE( lightningBoltNode.LMLP.eAPSPE.elevation ), tempElevationRamp, tempElevationRampRoot )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE( lightningBoltNode.LMLP.eAPSPE.elevationRand ), tempElevationRandRamp, tempElevationRandRampRoot )
-			setupAPVInputFromRamp( self.LightningProcessor.getAPSPE( lightningBoltNode.LMLP.eAPSPE.childProbability ), tempChildProbabilityRamp )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.offset ), tempOffsetRamp, tempOffsetRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevation ), tempElevationRamp, tempElevationRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevationRand ), tempElevationRandRamp, tempElevationRandRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.childProbability ), tempChildProbabilityRamp )
 
 			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.samplingDummyOut, thisNode,data)
 			outputHandle.setInt(1)
@@ -452,66 +456,51 @@ global proc AElightningboltTemplate( string $nodeName )
 			sys.stderr.write('compute mesh\n')
 
 			thisNode = self.thisMObject()
+			acc = ATTAccessor( lightningBoltNode.hlp, thisNode, data )
 
 			# global values
-			tempTubeSides = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.tubeSides, thisNode,data)
-			tempMaxGeneration = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.maxGeneration, thisNode,data)
+			tempTubeSides = acc.get( lightningBoltNode.tubeSides)
+			tempMaxGeneration = acc.get( lightningBoltNode.maxGeneration)
 
 			# special values
-			tempSeedShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.seedShape, thisNode,data)
-			tempSeedBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.seedBranching, thisNode,data)
+			tempSeedShape = acc.get( lightningBoltNode.seedShape)
+			tempSeedBranching = acc.get( lightningBoltNode.seedBranching)
 
 			# generation values
-			tempShapeFrequency = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.shapeFrequency, thisNode,data)
-			tempNumChildren = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.numChildren, thisNode, data)
-			tempNumChildrenRand = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.numChildrenRand, thisNode, data)
-			tempTimeShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.timeShape, thisNode,data)
-			tempTimeBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.timeBranching, thisNode,data)
-			tempOffsetMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offset, thisNode,data)
+			tempShapeFrequency = acc.get( lightningBoltNode.shapeFrequency)
+			tempNumChildren = acc.get( lightningBoltNode.numChildren)
+			tempNumChildrenRand = acc.get( lightningBoltNode.numChildrenRand)
+			tempTimeShape = acc.get( lightningBoltNode.timeShape)
+			tempTimeBranching = acc.get( lightningBoltNode.timeBranching)
+			tempOffsetMult = acc.get( lightningBoltNode.offset)
 
 			# Along Path branches values
-			tempRadiusMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusMult, thisNode,data)
-			tempIntensityMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityMult, thisNode,data)
-			tempChildLengthMult = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthMult, thisNode,data)
+			tempRadiusMult = acc.get( lightningBoltNode.radiusMult)
+			tempIntensityMult = acc.get( lightningBoltNode.intensityMult)
+			tempChildLengthMult = acc.get( lightningBoltNode.childLengthMult)
 
 			# transfert values
-			tempTransfertRadius = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertRadius, thisNode,data)
-			tempTransfertChildLength = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertChildLength, thisNode,data)
-			tempTransfertIntensity = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertIntensity, thisNode,data)
+			tempTransfertRadius = acc.get( lightningBoltNode.transfertRadius)
+			tempTransfertChildLength = acc.get( lightningBoltNode.transfertChildLength)
+			tempTransfertIntensity = acc.get( lightningBoltNode.transfertIntensity)
 
-			tempTransfertOffset = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertOffset, thisNode,data)
-			tempTransfertTimeBranching = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertTimeBranching, thisNode,data)
-			tempTransfertTimeShape = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertTimeShape, thisNode,data)
+			tempTransfertOffset = acc.get( lightningBoltNode.transfertOffset)
+			tempTransfertTimeBranching = acc.get( lightningBoltNode.transfertTimeBranching)
+			tempTransfertTimeShape = acc.get( lightningBoltNode.transfertTimeShape)
 
-			tempTransfertNumChildren = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertNumChildren, thisNode,data)
-			tempTransfertNumChildrenRand = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertNumChildrenRand, thisNode,data)
-			tempTransfertShapeFrequency = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertShapeFrequency, thisNode,data)
+			tempTransfertNumChildren = acc.get( lightningBoltNode.transfertNumChildren)
+			tempTransfertNumChildrenRand = acc.get( lightningBoltNode.transfertNumChildrenRand)
+			tempTransfertShapeFrequency = acc.get( lightningBoltNode.transfertShapeFrequency)
 
-			isRadiusRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.radiusRootOverride, thisNode,data)
-			tempTransfertRadiusRoot = None
-			if isRadiusRootOverrided:
-				tempTransfertRadiusRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertRadiusRoot, thisNode,data)
+			tempTransfertRadiusRoot = acc.getIf( lightningBoltNode.radiusRootOverride, lightningBoltNode.transfertRadiusRoot )
+			tempTransfertChildLengthRoot = acc.getIf( lightningBoltNode.childLengthRootOverride, lightningBoltNode.transfertChildLengthRoot )
+			tempTransfertIntensityRoot = acc.getIf( lightningBoltNode.intensityRootOverride, lightningBoltNode.transfertIntensityRoot )
 
-			isChildLengthRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.childLengthRootOverride, thisNode,data)
-			tempTransfertChildLengthRoot = None
-			if isChildLengthRootOverrided:
-				tempTransfertChildLengthRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertChildLengthRoot, thisNode,data)
+			tempTransfertTimeShapeRoot = acc.getIf( lightningBoltNode.timeShapeRootOverride, lightningBoltNode.transfertTimeShapeRoot )
 
-			isIntensityRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.intensityRootOverride, thisNode,data)
-			tempTransfertIntensityRoot = None
-			if isIntensityRootOverrided:
-				tempTransfertIntensityRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertIntensityRoot, thisNode,data)
-
-			isOffsetRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.offsetRootOverride, thisNode,data)
-			tempTransfertOffsetRoot = None
-			if isOffsetRootOverrided:
-				tempTransfertOffsetRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertOffsetRoot, thisNode,data)
-
-			isNumChildrenRootOverrided = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.numChildrenRootOverride, thisNode,data)
-			tempTransfertNumChildrenRoot = None
-			if isNumChildrenRootOverrided:
-				tempTransfertNumChildrenRoot = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.transfertNumChildrenRoot, thisNode,data)
-
+			tempTransfertOffsetRoot = acc.getIf( lightningBoltNode.offsetRootOverride, lightningBoltNode.transfertOffsetRoot )
+			tempTransfertNumChildrenRoot = acc.getIf( lightningBoltNode.numChildrenRootOverride, lightningBoltNode.transfertNumChildrenRoot )
+			tempTransfertNumChildrenRandRoot = acc.getIf( lightningBoltNode.numChildrenRootOverride, lightningBoltNode.transfertNumChildrenRandRoot )
 
 
 			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
@@ -519,53 +508,53 @@ global proc AElightningboltTemplate( string $nodeName )
 			triggerSampling = plugDum.asInt()
 
 
-			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.outputMesh, thisNode,data)
+			outputHandle = acc.get(lightningBoltNode.outputMesh)
 
-			tempCurve = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.inputCurve, thisNode,data)
+			tempCurve = acc.get(lightningBoltNode.inputCurve)
 			if tempCurve.isNull():
 				sys.stderr.write('there is no curve!\n')
 				data.setClean(plug)
 				return
 
 			fnNurbs = OpenMaya.MFnNurbsCurve( tempCurve )
-			pointList, cvLength = getPointListFromCurve( self.LightningProcessor.maxPoints, fnNurbs )
+			pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs )
 
 			#sys.stderr.write('child length '+str(tempChildLengthMult*cvLength)+'\n')
 
 			# load the Along Path Values inputs of the node into the processor			
-			self.LightningProcessor.setAPVFactors( lightningBoltNode.LMLP.eAPBR.radius, tempRadiusMult )
-			self.LightningProcessor.setAPVFactors( lightningBoltNode.LMLP.eAPBR.intensity, tempIntensityMult )
-			self.LightningProcessor.setAPVFactors( lightningBoltNode.LMLP.eAPBR.childLength, tempChildLengthMult*cvLength )
+			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.radius, tempRadiusMult )
+			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.intensity, tempIntensityMult )
+			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.childLength, tempChildLengthMult*cvLength )
 
 			# load the Special Branch values
-			self.LightningProcessor.setSpecialBranchValue( lightningBoltNode.LMLP.eSPEBR.seedShape, tempSeedShape )
-			self.LightningProcessor.setSpecialBranchValue( lightningBoltNode.LMLP.eSPEBR.seedBranching, tempSeedBranching )
+			self.LP.setSpecialBranchValue( lightningBoltNode.LPM.eSPEBR.seedShape, tempSeedShape )
+			self.LP.setSpecialBranchValue( lightningBoltNode.LPM.eSPEBR.seedBranching, tempSeedBranching )
 
 			# load the Generation inputs
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.shapeFrequency, tempShapeFrequency )
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.shapeTime, tempTimeShape.value() )
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.branchingTime, tempTimeBranching.value() )
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.numChildren, tempNumChildren )
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.numChildrenRand, tempNumChildrenRand )
-			self.LightningProcessor.setGENValue( lightningBoltNode.LMLP.eGEN.offset, tempOffsetMult )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.shapeFrequency, tempShapeFrequency )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.shapeTime, tempTimeShape.value() )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.branchingTime, tempTimeBranching.value() )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildren, tempNumChildren )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildrenRand, tempNumChildrenRand )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.offset, tempOffsetMult )
 
 			# load the Generation Transfert Factors
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.branchingTime, tempTransfertTimeBranching )
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.shapeTime, tempTransfertTimeShape )
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.offset, tempTransfertOffset, tempTransfertOffsetRoot )
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.numChildren, tempTransfertNumChildren, tempTransfertNumChildrenRoot )
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.numChildrenRand, tempTransfertNumChildrenRand )
-			self.LightningProcessor.setGENTransfert( lightningBoltNode.LMLP.eGEN.shapeFrequency, tempTransfertShapeFrequency )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.branchingTime, tempTransfertTimeBranching )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.shapeTime, tempTransfertTimeShape, tempTransfertTimeShapeRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.offset, tempTransfertOffset, tempTransfertOffsetRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildren, tempTransfertNumChildren, tempTransfertNumChildrenRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildrenRand, tempTransfertNumChildrenRand, tempTransfertNumChildrenRandRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.shapeFrequency, tempTransfertShapeFrequency )
 
 
-			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
-			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPBR.childLength, tempTransfertChildLength, tempTransfertChildLengthRoot )
-			self.LightningProcessor.setAPVTransfert( lightningBoltNode.LMLP.eAPBR.intensity, tempTransfertIntensity, tempTransfertIntensityRoot )
+			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
+			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.childLength, tempTransfertChildLength, tempTransfertChildLengthRoot )
+			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.intensity, tempTransfertIntensity, tempTransfertIntensityRoot )
 			
 
-			self.LightningProcessor.initializeProcessor()
-			self.LightningProcessor.addSeedPointList(pointList)
-			outputData = self.LightningProcessor.process(tempMaxGeneration, tempTubeSides)
+			self.LP.initializeProcessor()
+			self.LP.addSeedPointList(pointList)
+			outputData = self.LP.process(tempMaxGeneration, tempTubeSides)
 
 			#sys.stderr.write('end of compute\n')
 
@@ -656,11 +645,15 @@ def nodeInitializer():
 
 # Root Overrides
 	# Generation Transfert Overrides
+	lightningBoltNode.hlp.createAtt( name = "timeShapeRootOverride", fn=numAttr, shortName="tsro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
+	lightningBoltNode.hlp.createAtt( name = "transfertTimeShapeRoot", fn=numAttr, shortName="ttsrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
+
 	lightningBoltNode.hlp.createAtt( name = "offsetRootOverride", fn=numAttr, shortName="oro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
 	lightningBoltNode.hlp.createAtt( name = "transfertOffsetRoot", fn=numAttr, shortName="tor", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "offsetRampRoot", fn=OpenMaya.MRampAttribute, shortName="orrt", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "numChildrenRootOverride", fn=numAttr, shortName="ncro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRoot", fn=numAttr, shortName="tncrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRandRoot", fn=numAttr, shortName="tncrrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 	# APV Special overrides
 	lightningBoltNode.hlp.createAtt( name = "elevationRootOverride", fn=numAttr, shortName="ero", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
