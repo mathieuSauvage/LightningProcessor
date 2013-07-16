@@ -240,7 +240,7 @@ def setupAPVInputFromRamp( arrays, ramp, rampRoot=None ):
 		return
 	fillArrayFromRampAtt( arrayRoot, rampRoot)
 
-def getPointListFromCurve( numPoints, fnCurve):
+def getPointListFromCurve( numPoints, fnCurve, lengthScale):
 	startTemp = OpenMaya.MScriptUtil()
 	startTemp.createFromDouble(0.0)
 	startPtr = startTemp.asDoublePtr()
@@ -254,24 +254,24 @@ def getPointListFromCurve( numPoints, fnCurve):
 	paramEnd = endTemp.getDouble(endPtr)-0.000001
 	#sys.stderr.write('paramEnd '+str(paramEnd)+'\n')
 	
-	step = (paramEnd - paramStart)/(numPoints-1)
+	step = lengthScale*(paramEnd - paramStart)/(numPoints-1)
 	
 	pt=OpenMaya.MPoint()
 	param=paramStart
 	res = []
-	fullLength = 0
+	#fullLength = 0
 	for i in range(numPoints):
 		#sys.stderr.write('i '+str(i)+' param '+str(param)+'\n')
 		fnCurve.getPointAtParam(param, pt)
 		res.append( [pt.x,pt.y,pt.z] )
-		if i>0 :
-			fullLength += math.sqrt(res[i-1][0]*pt.x + res[i-1][1]*pt.y + res[i-1][2]*pt.z) 
+		#if i>0 :
+		#	fullLength += math.sqrt(res[i-1][0]*pt.x + res[i-1][1]*pt.y + res[i-1][2]*pt.z) 
 		#sys.stderr.write('fullLength '+str(fullLength)+'\n')
 
 		param += step
-	return res, fnCurve.length()
+	return res, lengthScale*fnCurve.length()
 
-
+# class to help having a cleaner access to node's attribute values
 class ATTAccessor:
 	def __init__( self, helper, node, data ):
 		self.helper = helper
@@ -289,13 +289,225 @@ class ATTAccessor:
 		return result
 
 class lightningBoltNode(OpenMayaMPx.MPxNode):
-		
 	#----------------------------------------------------------------------------
 	##AEtemplate proc
 	mel.eval('''
+
+proc string localizedAttrName( string $name ) {
+	if( $name == "Selected Color" ) {
+		return (uiRes("m_AEaddRampControl.kSelClr"));
+	} else if( $name == "Selected Position" ) {
+		return (uiRes("m_AEaddRampControl.kSelPos"));
+	} else if( $name == "Selected Value" ) {
+		return (uiRes("m_AEaddRampControl.kSelVal"));
+	} else if( $name == "Interpolation method" ) {
+		return (uiRes("m_AEaddRampControl.kInterpMethod"));
+	}
+}
+
+global proc LGHTAEmakeLargeRamp( string $nodeAttr,
+							int $bound,
+							int $indent,
+							int $staticEntries,
+							int $staticPositions,
+							int $adaptiveScaling )
+//
+//	Description:
+//
+//	$staticEntries - If set to 1, the gradientControl widget will be set to
+//					a fixed number of ramp entries (control points).
+//
+{
+	string $buffer[];
+	tokenize($nodeAttr, ".", $buffer);
+	string $attr = $buffer[1];
+
+	string $rampName = $attr + "Ramp";
+	string $editButton = $attr + "RampEdit";
+	string $scName = $attr +"Scc";
+	string $spName = $attr +"Sp";
+	string $siName = $attr +"Si";
+
+	string $colEntryName =  ($nodeAttr + "[0]." + $attr + "_ColorR");
+	int $isColor = `objExists ($colEntryName)`;
+
+	//setUITemplate -pst attributeEditorTemplate;
+	string $niceN = `attributeName -nice $nodeAttr`;
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	text -label $niceN -align "left";
+
+	// ramp block
+	string $rampForm = `formLayout ($rampName + "Form")`;
+		string $spc	= `attrFieldSliderGrp -label (localizedAttrName("Selected Position"))
+			-cw 1 123 -annotation (localizedAttrName("Selected Position")) $spName`;
+		string $scc;
+		if( $isColor ){
+			$scc= `attrColorSliderGrp -label (localizedAttrName("Selected Color"))
+				-cw 1 123 -cw 2 45 -cw 3 0 -annotation (localizedAttrName("Selected Color")) -sb 1 $scName`;
+		} else {
+			$scc	= `attrFieldSliderGrp -label (localizedAttrName("Selected Value"))
+			-cw 1 123 -annotation (localizedAttrName("Selected Value")) $scName`;
+		}
+		
+		string $interp = `attrEnumOptionMenuGrp -label (uiRes("m_AEaddRampControl.kInterp"))
+			-cw 1 123 -annotation (localizedAttrName("Interpolation method")) $siName`;
+		string $boundStyle = "etchedIn";
+		if( $bound ){
+			$boundStyle = "in";
+		}
+		string $lmax;
+		if ( $adaptiveScaling ) {
+			$lmax = `text -label "1.0" ($rampName+"LX")`;
+		}
+		$editButton = `button -l ">" -width 23 -c ("editRampAttribute "+$nodeAttr) $editButton`;
+		string $rframe = `frameLayout -bs $boundStyle -lv 0 -cll 0 ($rampForm + "fr")`;
+		string $widgetName = `gradientControl
+								-at $nodeAttr
+								-snc $staticEntries
+								-sp $staticPositions
+								// -w 148 -h 74
+								-w 135 -h 74
+								$rampName`;
+		if ( $adaptiveScaling ) {
+			gradientControl -e -as $adaptiveScaling -ror $adaptiveScaling -ulc $lmax $widgetName;
+		}
+
+		setParent ..;
+		formLayout
+			-edit
+				-attachForm $spc "left"  0
+				-attachNone $spc "right"
+				-attachForm $spc "top" 0
+				-attachNone $spc "bottom"
+
+				-attachForm $scc "left" 0 
+				-attachNone $scc "right"
+				-attachControl $scc "top" 0 $spc
+				-attachNone $scc "bottom"
+
+				-attachForm $interp "left" 0 
+				-attachNone $interp "right"
+				-attachControl $interp "top" 0 $scc
+				-attachNone $interp "bottom"
+
+				-attachControl $rframe "left" 2 $interp
+				-attachNone $rframe "right"
+				-attachForm $rframe "top" 0
+				-attachNone $rframe "bottom"
+
+				-attachForm $editButton "top" 0
+				-attachForm $editButton "bottom" 0
+				-attachControl $editButton "left" 25 $rframe
+				-attachNone $editButton "right"
+				$rampForm;
+
+		if ( $adaptiveScaling ) {
+			formLayout
+				-edit
+					-attachControl $lmax "left" 2 $rframe
+					-attachNone $lmax "right"
+					-attachForm $lmax "top" 0
+					-attachNone $lmax "bottom"
+					$rampForm;
+		}
+	setParent ..;
+	setParent ..;
+
+	// input
+	if(objExists ($nodeAttr +"Input")){
+		string $inLabel;
+		string $labelAttr = `attributeName -nice $nodeAttr`;
+		string $inputVarAnnot = (uiRes("m_AEaddRampControl.kInputVarAnnot"));
+		
+		if( $indent || size( $labelAttr ) < 9 ){
+			string $fmt = (uiRes("m_AEaddRampControl.kInputFmt"));
+			$inLabel = `format -s $labelAttr $fmt`;
+		} else {
+			$inLabel = (uiRes("m_AEaddRampControl.kInputShort"));
+		}
+		if( $indent ){
+			attrEnumOptionMenuGrp -l $inLabel
+				-ann $inputVarAnnot
+				-cw 1 204
+				-at ($nodeAttr + "Input") ($rampName + "Input");
+		} else {
+			attrEnumOptionMenuGrp -l $inLabel
+				-ann $inputVarAnnot
+				-cw 1 123
+				-at ($nodeAttr + "Input") ($rampName + "Input");
+		}
+		
+	}
+
+	// inputBias
+	if(  objExists ($nodeAttr +"InputBias") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputBias")) -cw4 123 81 130	25 
+				-at ($nodeAttr +"InputBias") ($rampName + "InputBias");
+	}
+
+	// inputScale
+	if(  objExists ($nodeAttr +"InputScale") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputScale")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputScale") ($rampName + "InputScale");
+	}
+	// inputMax
+	if(  objExists ($nodeAttr +"InputMax") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputMax")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputMax") ($rampName + "InputMax");
+	}
+	// inputOffset
+	if(  objExists ($nodeAttr +"InputOffset") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputOffset")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputOffset") ($rampName + "InputOffset");
+	}
+
+	// tell the port about the controls
+	gradientControl -e -scc $scc $widgetName;
+	gradientControl -e -spc $spc $widgetName;
+	gradientControl -e -sic $interp $widgetName;
+	//setUITemplate -ppt;
+
+}
+
+global proc LGHTAERampControl(string $nodeAttr)
+{
+	LGHTAEmakeLargeRamp( $nodeAttr,1,1,0,0, 1 );
+}
+
+global proc LGHTAERampControl_Replace (string $nodeAttr)
+{
+	string $buffer[];
+	tokenize($nodeAttr, ".", $buffer);
+	string $attr = $buffer[1];
+
+	string $rampName = $attr + "Ramp";
+	string $editButton = $attr + "RampEdit";
+
+	gradientControl -edit -at $nodeAttr $rampName;
+	if( `button -exists $editButton` ){	
+		button -edit -c ("editRampAttribute "+$nodeAttr) $editButton;
+	}
+	if( `objExists ($nodeAttr +"Input")` ){
+		attrEnumOptionMenuGrp -edit -at ($nodeAttr + "Input") ($rampName + "Input");
+	}
+	if( `objExists ($nodeAttr +"InputScale")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputScale") ($rampName + "InputScale");
+	}
+	if( `objExists ($nodeAttr +"InputBias")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputBias") ($rampName + "InputBias");
+	}
+	if( `objExists ($nodeAttr +"InputMax")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputMax") ($rampName + "InputMax");
+	}
+	if( `objExists ($nodeAttr +"InputOffset")` ){
+		if (`attrFieldSliderGrp -query -exists ($rampName + "InputOffset")`) {
+			attrFieldSliderGrp -edit -at ($nodeAttr + "InputOffset") ($rampName + "InputOffset");
+		}
+	}
+}
+
 global proc AElightningboltTemplate( string $nodeName )
 {
-
 	AEswatchDisplay  $nodeName;
 	editorTemplate -beginScrollLayout;
 
@@ -307,40 +519,71 @@ global proc AElightningboltTemplate( string $nodeName )
 			editorTemplate -addControl "seedBranching";
 		editorTemplate -endLayout;
 
-		editorTemplate -beginLayout "Generation parameters" -collapse 0;
-			editorTemplate -addControl "timeShape";
-			editorTemplate -addControl "timeBranching";
-			editorTemplate -addControl "numChildren";
-			editorTemplate -addControl "numChildrenRand";
-			editorTemplate -addControl "offset";
-			editorTemplate -addControl "shapeFrequency";
-
-			editorTemplate -beginLayout "Generation transfert Factors" -collapse 0;
-				editorTemplate -addControl "transfertTimeShape";
-				editorTemplate -addControl "transfertTimeBranching";
-				editorTemplate -addControl "transfertOffset";
-				editorTemplate -addControl "transfertNumChildren";
-				editorTemplate -addControl "transfertNumChildrenRand";
-				editorTemplate -addControl "transfertShapeFrequency";
+		editorTemplate -beginLayout "Per Generation parameters" -collapse 1;
+		
+			editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
+				editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "timeShape" "transfertTimeShape";
+				editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "timeBranching" "transfertTimeBranching";
+				editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transfertTimeShapeRoot" "transfertTimeBranchingRoot";				
+				editorTemplate -s "timeShape";
+				editorTemplate -s "transfertTimeShape";
+				editorTemplate -s "timeBranching";
+				editorTemplate -s "transfertTimeBranching";
+				editorTemplate -s "timeRootOverride";
+				editorTemplate -s "transfertTimeShapeRoot";
+				editorTemplate -s "transfertTimeBranchingRoot";	
 			editorTemplate -endLayout;
+		
+			editorTemplate -beginLayout "⟦ Children Attributes ⟧" -collapse 1;
+				editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildren" "transfertNumChildren";
+				editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildrenRand" "transfertNumChildrenRand";
+				editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childProbabilityAlongBranch";
+				editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "numChildrenRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot";
+
+				editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationAlongBranch";
+				editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationRandAlongBranch";
+				editorTemplate -callCustom "LGHTAEOverrideLayoutElevation" "LGHTAEOverrideLayoutElevation_Replace" "elevationRootOverride" "elevationAlongBranchRoot" "elevationRandAlongBranchRoot";
+
+				editorTemplate -s "numChildren";
+				editorTemplate -s "transfertNumChildren";
+				editorTemplate -s "numChildrenRand";
+				editorTemplate -s "transfertNumChildrenRand";
+				editorTemplate -s "numChildrenRootOverride";
+				editorTemplate -s "transfertNumChildrenRoot";
+				editorTemplate -s "transfertNumChildrenRandRoot";			
+				editorTemplate -s "elevationRootOverride";
+				editorTemplate -s "elevationAlongBranchRoot";
+				editorTemplate -s "elevationRandAlongBranchRoot";
+			editorTemplate -endLayout;
+
+			editorTemplate -beginLayout "⟦ Chaos Attributes ⟧" -collapse 1;
+				editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosOffset" "transfertChaosOffset";
+				editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosFrequency" "transfertChaosFrequency";
+				editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosOffsetAlongBranch";
+				editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosOffsetRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosOffsetAlongBranchRoot";
+				editorTemplate -s "chaosOffsetRootOverride";
+				editorTemplate -s "transfertChaosOffsetRoot";
+				editorTemplate -s "chaosOffsetAlongBranchRoot";
+				editorTemplate -s "transfertChaosFrequencyRoot";
+
+				editorTemplate -s "chaosOffset";
+				editorTemplate -s "transfertChaosOffset";
+				editorTemplate -s "chaosFrequency";
+				editorTemplate -s "transfertChaosFrequency";
+				editorTemplate -s "chaosOffsetAlongBranch";
+			editorTemplate -endLayout;
+
 		editorTemplate -endLayout;
 
-		editorTemplate -beginLayout "Special parameters" -collapse 0;
-			AEaddRampControl ($nodeName+".childProbabilityRamp");
-			AEaddRampControl ($nodeName+".offsetRamp");			
-			AEaddRampControl ($nodeName+".elevationRamp");
-			AEaddRampControl ($nodeName+".elevationRandRamp");
-		editorTemplate -endLayout;
-
-		editorTemplate -beginLayout "Branch parameters" -collapse 0;
-			AEaddRampControl ($nodeName+".radiusRamp");			
+		editorTemplate -beginLayout "Branch parameters" -collapse 1;
+			AEaddRampControl ($nodeName+".radiusAlongBranch");			
 			editorTemplate -addControl "radiusMult";
-			AEaddRampControl ($nodeName+".childLengthRamp");
+			AEaddRampControl ($nodeName+".childLengthAlongPath");
 			editorTemplate -addControl "childLengthMult";
-			AEaddRampControl ($nodeName+".intensityRamp");
+			AEaddRampControl ($nodeName+".intensityAlongPath");
 			editorTemplate -addControl "intensityMult";
 			
-			editorTemplate -beginLayout "branches transfert Factors" -collapse 0;
+			editorTemplate -beginLayout "branches transfert Factors" -collapse 1;
 				editorTemplate -addControl "transfertRadius";
 				editorTemplate -addControl "transfertChildLength";
 				editorTemplate -addControl "transfertIntensity";
@@ -348,34 +591,19 @@ global proc AElightningboltTemplate( string $nodeName )
 
 		editorTemplate -endLayout;
 
-		editorTemplate -beginLayout "Root Overrides" -collapse 0;
-
-			editorTemplate -addControl "timeShapeRootOverride";
-			editorTemplate -addControl "transfertTimeShapeRoot";
-
-			editorTemplate -addControl "offsetRootOverride";
-			editorTemplate -addControl "transfertOffsetRoot";
-			AEaddRampControl ($nodeName+".offsetRampRoot");
-
-			editorTemplate -addControl "numChildrenRootOverride";
-			editorTemplate -addControl "transfertNumChildrenRoot";
-			editorTemplate -addControl "transfertNumChildrenRandRoot";			
-
-			editorTemplate -addControl "elevationRootOverride";
-			AEaddRampControl ($nodeName+".elevationRampRoot");
-			AEaddRampControl ($nodeName+".elevationRandRampRoot");
+		editorTemplate -beginLayout "Root Overrides" -collapse 1;
 
 			editorTemplate -addControl "radiusRootOverride";
-			AEaddRampControl ($nodeName+".radiusRampRoot");
+			AEaddRampControl ($nodeName+".radiusAlongBranchRoot");
 			editorTemplate -addControl "transfertRadiusRoot";
 
 			editorTemplate -addControl "childLengthRootOverride";
-			AEaddRampControl ($nodeName+".childLengthRampRoot");
+			AEaddRampControl ($nodeName+".childLengthAlongPathRoot");
 			editorTemplate -addControl "transfertChildLengthRoot";
 
 			editorTemplate -addControl "intensityRootOverride";
-			AEaddRampControl ($nodeName+".intensityRampRoot");
-			editorTemplate -addControl "transfertIntensityRoot";
+			AEaddRampControl ($nodeName+".intensityAlongPathRoot");
+			editorTemplate -addControl "transfertIntensityRoot";	
 
 		editorTemplate -endLayout;
 
@@ -386,6 +614,169 @@ global proc AElightningboltTemplate( string $nodeName )
 	editorTemplate -addExtraControls;
 	editorTemplate -endScrollLayout;
 }
+
+global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, string $att2S, int $isFloat )
+{
+	string $att1 = attName($att1S);
+	string $att2 = attName($att2S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 5 -cw5 110 35 55 100 30;
+	if ($name == "")
+	{
+		$name = `attributeName -nice $att1S`;
+	}
+	text -label $name -align "left";
+	text -label "base";
+	if ($isFloat == 1)
+	{
+		floatField -w 35 ($att1+"_fldGrp");
+	}
+	else
+	{
+		intField -w 35 ($att1+"_fldGrp");	
+	}
+	text -label "transfert Factor" -align "right";
+	floatField ($att2+"_fldGrp");
+	setParent ..;
+	setParent ..;
+
+	LGHTAELineBaseTransfertLayout_Replace( $att1S, $att2S );
+
+}
+
+global proc LGHTAELineBaseIntTransfertLayout( string $baseAttS, string $transfertAttS )
+{
+	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 0);
+}
+
+global proc LGHTAELineBaseFloatTransfertLayout( string $baseAttS, string $transfertAttS )
+{
+	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 1);
+}
+
+global proc LGHTAELineBaseTransfertLayout_Replace( string $baseAttS, string $transfertAttS )
+{
+	string $base = attName($baseAttS);
+	string $trans = attName($transfertAttS);
+	connectControl ($base+"_fldGrp") $baseAttS;
+	connectControl ($trans+"_fldGrp") $transfertAttS;	
+}
+
+global proc LGHTAELineTransfertAttribute( string $name, string $attS )
+{
+	string $att = attName($attS);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 3 -cw3 110 100 30;
+	if ($name == "")
+		$name = `attributeName -nice $attS`;
+
+	text -label $name -align "left";
+	text -label "transfert Factor" -align "right";
+	floatField ($att+"_fldGrp");
+	setParent ..;
+	setParent ..;
+	LGHTAELineTransfertAttribute_Replace($attS);
+}
+
+global proc LGHTAELineTransfertAttribute_Replace( string $attS )
+{
+	string $att = attName($attS);
+	connectControl ($att+"_fldGrp") $attS;	
+}
+
+global proc string attName( string $att )
+{
+	string $part[];
+	tokenize($att, ".", $part);
+	return $part[1];
+}
+
+global proc enableOverrideFL( string $fl, string $chb )
+{
+	int $v = `checkBox -q -v $chb`;
+	//frameLayout -e -cl (!$v) $fl;
+	frameLayout -e -vis ($v) $fl;
+}
+
+global proc LGHTAEOverrideLayoutGeneric( string $name, string $overrideAttS )
+{
+	string $overrideAtt = attName($overrideAttS);
+	string $chkName = ($overrideAtt+"_CHB");
+	string $flName = ($overrideAtt+"_FL");
+	columnLayout -rowSpacing 1 -cat "left" 15 -adj true;
+	checkBox -label ("Activate Root "+$name+" Overrides") $chkName;
+	//checkBox -label ("Root "+$name+" Overrides") -cc ( "enableOverrideFL( \\""+$flName+"\\" ,\\""+$chkName+"\\")" ) $chkName;
+	frameLayout -collapsable false -cl false -lv false -vis true -borderStyle "in" -mw 0 -mh 5 $flName;
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+}
+
+global proc LGHTAEOverrideLayoutGeneric_Replace ( string $overrideAttS )
+{
+	string $overrideAtt = attName($overrideAttS);
+	connectControl ($overrideAtt+"_CHB") $overrideAttS;
+}
+
+global proc LGHTAEOverrideLayoutTime( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric( "Time", $overrideAttS );
+	LGHTAELineTransfertAttribute( "timeShape", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "timeBranching", $attRoot2TrS );
+}
+
+global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+}
+
+
+global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric( "Children Nums", $overrideAttS );
+	LGHTAELineTransfertAttribute( "numChildren", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "numChildrenRand", $attRoot2TrS );
+}
+
+global proc LGHTAEOverrideLayoutChildren_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+}
+
+global proc LGHTAEOverrideLayoutElevation( string $overrideAttS , string $attRoot1RpS, string $attRoot2RpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Elevations", $overrideAttS );
+	LGHTAERampControl( $attRoot1RpS );
+	LGHTAERampControl( $attRoot2RpS );
+}
+
+global proc LGHTAEOverrideLayoutElevation_Replace( string $overrideAttS , string $attRoot1RpS, string $attRoot2RpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAERampControl_Replace( $attRoot1RpS );
+	LGHTAERampControl_Replace( $attRoot2RpS );
+}
+
+global proc LGHTAEOverrideLayoutChaos( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Chaos", $overrideAttS );
+	LGHTAELineTransfertAttribute( "chaosOffset", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "chaosFrequency", $attRoot2TrS );
+	LGHTAERampControl( $attRoot1RpS );
+}
+
+global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace( $attRoot1TrS );
+	LGHTAELineTransfertAttribute_Replace( $attRoot2TrS );
+	LGHTAERampControl_Replace( $attRoot1RpS );
+}
+
 			''')
 	#----------------------------------------------------------------------------
 
@@ -421,29 +812,29 @@ global proc AElightningboltTemplate( string $nodeName )
 			# Basic Ramp Attribute to Sample
 
 			tempDetail = acc.get(lightningBoltNode.detail)
-			tempRadiusRamp = acc.get(lightningBoltNode.radiusRamp)
-			tempIntensityRamp = acc.get(lightningBoltNode.intensityRamp)
-			tempOffsetRamp = acc.get(lightningBoltNode.offsetRamp)
-			tempChildLengthRamp = acc.get(lightningBoltNode.childLengthRamp)
-			tempElevationRamp = acc.get(lightningBoltNode.elevationRamp)
-			tempElevationRandRamp = acc.get(lightningBoltNode.elevationRandRamp)
-			tempChildProbabilityRamp = acc.get(lightningBoltNode.childProbabilityRamp)
+			tempRadiusRamp = acc.get(lightningBoltNode.radiusAlongBranch)
+			tempIntensityRamp = acc.get(lightningBoltNode.intensityAlongPath)
+			tempChaosOffsetRamp = acc.get(lightningBoltNode.chaosOffsetAlongBranch)
+			tempChildLengthRamp = acc.get(lightningBoltNode.childLengthAlongPath)
+			tempElevationRamp = acc.get(lightningBoltNode.elevationAlongBranch)
+			tempElevationRandRamp = acc.get(lightningBoltNode.elevationRandAlongBranch)
+			tempChildProbabilityRamp = acc.get(lightningBoltNode.childProbabilityAlongBranch)
 
-			tempRadiusRampRoot = acc.getIf( lightningBoltNode.radiusRootOverride, lightningBoltNode.radiusRampRoot )
-			tempChildLengthRampRoot = acc.getIf( lightningBoltNode.childLengthRootOverride, lightningBoltNode.childLengthRampRoot )
-			tempIntensityRampRoot = acc.getIf( lightningBoltNode.intensityRootOverride, lightningBoltNode.intensityRampRoot )
-			tempElevationRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRampRoot )
-			tempElevationRandRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRandRampRoot )
-			tempOffsetRampRoot = acc.getIf( lightningBoltNode.offsetRootOverride, lightningBoltNode.offsetRampRoot )
+			tempRadiusRampRoot = acc.getIf( lightningBoltNode.radiusRootOverride, lightningBoltNode.radiusAlongBranchRoot )
+			tempChildLengthRampRoot = acc.getIf( lightningBoltNode.childLengthRootOverride, lightningBoltNode.childLengthAlongPathRoot )
+			tempIntensityRampRoot = acc.getIf( lightningBoltNode.intensityRootOverride, lightningBoltNode.intensityAlongPathRoot )
+			tempElevationRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationAlongBranchRoot )
+			tempElevationRandRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRandAlongBranchRoot )
+			tempChaosOffsetRampRoot = acc.getIf( lightningBoltNode.chaosOffsetRootOverride, lightningBoltNode.chaosOffsetAlongBranchRoot )
 
-			# ***** initialisation of the sizes of arrays in the Processor (everything depend on detail)
+			# ***** initialisation of the sizes of arrays in the Processor (all Along Path arrays depend on detail)
 			self.LP.setDetail(tempDetail)
 
 			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.radius ), tempRadiusRamp, tempRadiusRampRoot )
 			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.intensity ), tempIntensityRamp, tempIntensityRampRoot )
 			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.childLength ), tempChildLengthRamp, tempChildLengthRampRoot )
 
-			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.offset ), tempOffsetRamp, tempOffsetRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.chaosOffset ), tempChaosOffsetRamp, tempChaosOffsetRampRoot )
 			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevation ), tempElevationRamp, tempElevationRampRoot )
 			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevationRand ), tempElevationRandRamp, tempElevationRandRampRoot )
 			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.childProbability ), tempChildProbabilityRamp )
@@ -467,12 +858,12 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempSeedBranching = acc.get( lightningBoltNode.seedBranching)
 
 			# generation values
-			tempShapeFrequency = acc.get( lightningBoltNode.shapeFrequency)
+			tempChaosFrequency = acc.get( lightningBoltNode.chaosFrequency)
 			tempNumChildren = acc.get( lightningBoltNode.numChildren)
 			tempNumChildrenRand = acc.get( lightningBoltNode.numChildrenRand)
 			tempTimeShape = acc.get( lightningBoltNode.timeShape)
 			tempTimeBranching = acc.get( lightningBoltNode.timeBranching)
-			tempOffsetMult = acc.get( lightningBoltNode.offset)
+			tempChaosOffsetMult = acc.get( lightningBoltNode.chaosOffset)
 
 			# Along Path branches values
 			tempRadiusMult = acc.get( lightningBoltNode.radiusMult)
@@ -484,28 +875,28 @@ global proc AElightningboltTemplate( string $nodeName )
 			tempTransfertChildLength = acc.get( lightningBoltNode.transfertChildLength)
 			tempTransfertIntensity = acc.get( lightningBoltNode.transfertIntensity)
 
-			tempTransfertOffset = acc.get( lightningBoltNode.transfertOffset)
+			tempTransfertChaosOffset = acc.get( lightningBoltNode.transfertChaosOffset)
 			tempTransfertTimeBranching = acc.get( lightningBoltNode.transfertTimeBranching)
 			tempTransfertTimeShape = acc.get( lightningBoltNode.transfertTimeShape)
-
 			tempTransfertNumChildren = acc.get( lightningBoltNode.transfertNumChildren)
 			tempTransfertNumChildrenRand = acc.get( lightningBoltNode.transfertNumChildrenRand)
-			tempTransfertShapeFrequency = acc.get( lightningBoltNode.transfertShapeFrequency)
+			tempTransfertChaosFrequency = acc.get( lightningBoltNode.transfertChaosFrequency)
 
+			# Root overrides
 			tempTransfertRadiusRoot = acc.getIf( lightningBoltNode.radiusRootOverride, lightningBoltNode.transfertRadiusRoot )
 			tempTransfertChildLengthRoot = acc.getIf( lightningBoltNode.childLengthRootOverride, lightningBoltNode.transfertChildLengthRoot )
 			tempTransfertIntensityRoot = acc.getIf( lightningBoltNode.intensityRootOverride, lightningBoltNode.transfertIntensityRoot )
 
-			tempTransfertTimeShapeRoot = acc.getIf( lightningBoltNode.timeShapeRootOverride, lightningBoltNode.transfertTimeShapeRoot )
-
-			tempTransfertOffsetRoot = acc.getIf( lightningBoltNode.offsetRootOverride, lightningBoltNode.transfertOffsetRoot )
+			tempTransfertTimeShapeRoot = acc.getIf( lightningBoltNode.timeRootOverride, lightningBoltNode.transfertTimeShapeRoot )
+			tempTransfertTimeBranchingRoot = acc.getIf( lightningBoltNode.timeRootOverride, lightningBoltNode.transfertTimeBranchingRoot )
+			tempTransfertChaosOffsetRoot = acc.getIf( lightningBoltNode.chaosOffsetRootOverride, lightningBoltNode.transfertChaosOffsetRoot )
 			tempTransfertNumChildrenRoot = acc.getIf( lightningBoltNode.numChildrenRootOverride, lightningBoltNode.transfertNumChildrenRoot )
 			tempTransfertNumChildrenRandRoot = acc.getIf( lightningBoltNode.numChildrenRootOverride, lightningBoltNode.transfertNumChildrenRandRoot )
-
+			tempTransfertChaosFrequencyRoot = acc.getIf( lightningBoltNode.chaosOffsetRootOverride, lightningBoltNode.transfertChaosFrequencyRoot )
 
 			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
-			plugDum = OpenMaya.MPlug( thisNode, lightningBoltNode.samplingDummyOut.mObject) 
-			triggerSampling = plugDum.asInt()
+			plugDummy = OpenMaya.MPlug( thisNode, lightningBoltNode.samplingDummyOut.mObject) 
+			triggerSampling = plugDummy.asInt()
 
 
 			outputHandle = acc.get(lightningBoltNode.outputMesh)
@@ -517,34 +908,34 @@ global proc AElightningboltTemplate( string $nodeName )
 				return
 
 			fnNurbs = OpenMaya.MFnNurbsCurve( tempCurve )
-			pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs )
+			pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs, tempChildLengthMult )
 
 			#sys.stderr.write('child length '+str(tempChildLengthMult*cvLength)+'\n')
 
 			# load the Along Path Values inputs of the node into the processor			
 			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.radius, tempRadiusMult )
 			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.intensity, tempIntensityMult )
-			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.childLength, tempChildLengthMult*cvLength )
+			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.childLength, cvLength )
 
 			# load the Special Branch values
 			self.LP.setSpecialBranchValue( lightningBoltNode.LPM.eSPEBR.seedShape, tempSeedShape )
 			self.LP.setSpecialBranchValue( lightningBoltNode.LPM.eSPEBR.seedBranching, tempSeedBranching )
 
 			# load the Generation inputs
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.shapeFrequency, tempShapeFrequency )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosFrequency, tempChaosFrequency )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.shapeTime, tempTimeShape.value() )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.branchingTime, tempTimeBranching.value() )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildren, tempNumChildren )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildrenRand, tempNumChildrenRand )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.offset, tempOffsetMult )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosOffset, tempChaosOffsetMult )
 
 			# load the Generation Transfert Factors
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.branchingTime, tempTransfertTimeBranching )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.branchingTime, tempTransfertTimeBranching, tempTransfertTimeBranchingRoot )
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.shapeTime, tempTransfertTimeShape, tempTransfertTimeShapeRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.offset, tempTransfertOffset, tempTransfertOffsetRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosOffset, tempTransfertChaosOffset, tempTransfertChaosOffsetRoot )
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildren, tempTransfertNumChildren, tempTransfertNumChildrenRoot )
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildrenRand, tempTransfertNumChildrenRand, tempTransfertNumChildrenRandRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.shapeFrequency, tempTransfertShapeFrequency )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosFrequency, tempTransfertChaosFrequency,tempTransfertChaosFrequencyRoot )
 
 
 			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
@@ -577,12 +968,19 @@ global proc AElightningboltTemplate( string $nodeName )
 	def postConstructor(self):
 		# setting the Ramp initial value because it cannot be done in the AETemplate
 		# thanks to this blog for the idea : http://www.chadvernon.com/blog/resources/maya-api-programming/mrampattribute/
-		self.postConstructorRampInitialize( lightningBoltNode.radiusRamp.mObject, [(0,1),(1,0)] )
-		self.postConstructorRampInitialize( lightningBoltNode.offsetRamp.mObject, [(0,0),(.05,1)] )
-		self.postConstructorRampInitialize( lightningBoltNode.childLengthRamp.mObject, [(0,1),(1,.25)] )
-		self.postConstructorRampInitialize( lightningBoltNode.intensityRamp.mObject, [(0,1),(1,0.5)] )
-		self.postConstructorRampInitialize( lightningBoltNode.elevationRamp.mObject, [(0,0.5),(1,.15)] )
-		self.postConstructorRampInitialize( lightningBoltNode.elevationRandRamp.mObject, [(0,1)] )
+		self.postConstructorRampInitialize( lightningBoltNode.radiusAlongBranch.mObject, [(0,1),(1,0)] )
+		self.postConstructorRampInitialize( lightningBoltNode.radiusAlongBranchRoot.mObject, [(0,1),(1,0)] )
+		self.postConstructorRampInitialize( lightningBoltNode.chaosOffsetAlongBranch.mObject, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( lightningBoltNode.chaosOffsetAlongBranchRoot.mObject, [(0,0),(.05,1)] )
+
+		self.postConstructorRampInitialize( lightningBoltNode.childLengthAlongPath.mObject, [(0,1),(1,.25)] )
+		self.postConstructorRampInitialize( lightningBoltNode.childLengthAlongPathRoot.mObject, [(0,1),(1,.25)] )
+		self.postConstructorRampInitialize( lightningBoltNode.intensityAlongPath.mObject, [(0,1),(1,0.5)] )
+		self.postConstructorRampInitialize( lightningBoltNode.intensityAlongPathRoot.mObject, [(0,1),(1,0.5)] )
+		
+		self.postConstructorRampInitialize( lightningBoltNode.elevationAlongBranch.mObject, [(0,0.5),(1,.15)] )
+		self.postConstructorRampInitialize( lightningBoltNode.elevationRandAlongBranch.mObject, [(0,1)] )
+		self.postConstructorRampInitialize( lightningBoltNode.childProbabilityAlongBranch.mObject, [(0,0),(1,1)] )
 
 def nodeCreator():
 	return OpenMayaMPx.asMPxPtr( lightningBoltNode() )
@@ -608,27 +1006,27 @@ def nodeInitializer():
 # Generation Values
 	lightningBoltNode.hlp.createAtt( name = "timeShape", fn=unitAttr, shortName="ts", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "timeBranching", fn=unitAttr, shortName="tb", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, exceptAffectList=['samplingDummyOut'] )
-	lightningBoltNode.hlp.createAtt( name = "shapeFrequency", fn=numAttr, shortName="sf", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "chaosFrequency", fn=numAttr, shortName="sf", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "numChildren", fn=numAttr, shortName="nc", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultNumChildren, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "numChildrenRand", fn=numAttr, shortName="ncr", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultNumChildrenRand, exceptAffectList=['samplingDummyOut'] )
-	lightningBoltNode.hlp.createAtt( name = "offset", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "chaosOffset", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 	# Generation Transfert Factors
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeBranching", fn=numAttr, shortName="ttb", type=OpenMaya.MFnNumericData.kDouble, default=3.0, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeShape", fn=numAttr, shortName="tts", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
-	lightningBoltNode.hlp.createAtt( name = "transfertShapeFrequency", fn=numAttr, shortName="tsf", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "transfertChaosFrequency", fn=numAttr, shortName="tsf", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildren", fn=numAttr, shortName="tnc", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRand", fn=numAttr, shortName="tncr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
-	lightningBoltNode.hlp.createAtt( name = "transfertOffset", fn=numAttr, shortName="to", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
+	lightningBoltNode.hlp.createAtt( name = "transfertChaosOffset", fn=numAttr, shortName="to", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
 
 # APV Branches
-	lightningBoltNode.hlp.createAtt( name = "radiusRamp", fn=OpenMaya.MRampAttribute, shortName="rr", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "radiusAlongBranch", fn=OpenMaya.MRampAttribute, shortName="rr", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "radiusMult", fn=numAttr, shortName="rm", type=OpenMaya.MFnNumericData.kDouble, default=0.25, exceptAffectList=['samplingDummyOut'] )	
 	
-	lightningBoltNode.hlp.createAtt( name = "childLengthRamp", fn=OpenMaya.MRampAttribute, shortName="clr", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "childLengthAlongPath", fn=OpenMaya.MRampAttribute, shortName="clr", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "childLengthMult", fn=numAttr, shortName="clm", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	
-	lightningBoltNode.hlp.createAtt( name = "intensityRamp", fn=OpenMaya.MRampAttribute, shortName="ir", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "intensityAlongPath", fn=OpenMaya.MRampAttribute, shortName="ir", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "intensityMult", fn=numAttr, shortName="im", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 	# APV Branches Transfert Factors
@@ -637,40 +1035,44 @@ def nodeInitializer():
 	lightningBoltNode.hlp.createAtt( name = "transfertIntensity", fn=numAttr, shortName="ti", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
 # APV Specials
-	lightningBoltNode.hlp.createAtt( name = "offsetRamp", fn=OpenMaya.MRampAttribute, shortName="or", type="Ramp" )	
+	lightningBoltNode.hlp.createAtt( name = "chaosOffsetAlongBranch", fn=OpenMaya.MRampAttribute, shortName="or", type="Ramp" )	
 	# elevation 1 = 180 degree
-	lightningBoltNode.hlp.createAtt( name = "elevationRamp", fn=OpenMaya.MRampAttribute, shortName="er", type="Ramp" )
-	lightningBoltNode.hlp.createAtt( name = "elevationRandRamp", fn=OpenMaya.MRampAttribute, shortName="err", type="Ramp" )
-	lightningBoltNode.hlp.createAtt( name = "childProbabilityRamp", fn=OpenMaya.MRampAttribute, shortName="cpr", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationAlongBranch", fn=OpenMaya.MRampAttribute, shortName="er", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationRandAlongBranch", fn=OpenMaya.MRampAttribute, shortName="err", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "childProbabilityAlongBranch", fn=OpenMaya.MRampAttribute, shortName="cpr", type="Ramp" )
 
 # Root Overrides
 	# Generation Transfert Overrides
-	lightningBoltNode.hlp.createAtt( name = "timeShapeRootOverride", fn=numAttr, shortName="tsro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
+	lightningBoltNode.hlp.createAtt( name = "timeRootOverride", fn=numAttr, shortName="tro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeShapeRoot", fn=numAttr, shortName="ttsrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
+	lightningBoltNode.hlp.createAtt( name = "transfertTimeBranchingRoot", fn=numAttr, shortName="ttbrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
 
-	lightningBoltNode.hlp.createAtt( name = "offsetRootOverride", fn=numAttr, shortName="oro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
-	lightningBoltNode.hlp.createAtt( name = "transfertOffsetRoot", fn=numAttr, shortName="tor", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
-	lightningBoltNode.hlp.createAtt( name = "offsetRampRoot", fn=OpenMaya.MRampAttribute, shortName="orrt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "chaosOffsetRootOverride", fn=numAttr, shortName="oro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
+	lightningBoltNode.hlp.createAtt( name = "transfertChaosOffsetRoot", fn=numAttr, shortName="tor", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "transfertChaosFrequencyRoot", fn=numAttr, shortName="tsfr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "chaosOffsetAlongBranchRoot", fn=OpenMaya.MRampAttribute, shortName="orrt", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "numChildrenRootOverride", fn=numAttr, shortName="ncro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRoot", fn=numAttr, shortName="tncrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRandRoot", fn=numAttr, shortName="tncrrt", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 
+
+
 	# APV Special overrides
 	lightningBoltNode.hlp.createAtt( name = "elevationRootOverride", fn=numAttr, shortName="ero", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
-	lightningBoltNode.hlp.createAtt( name = "elevationRampRoot", fn=OpenMaya.MRampAttribute, shortName="errt", type="Ramp" )
-	lightningBoltNode.hlp.createAtt( name = "elevationRandRampRoot", fn=OpenMaya.MRampAttribute, shortName="errrt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationAlongBranchRoot", fn=OpenMaya.MRampAttribute, shortName="errt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "elevationRandAlongBranchRoot", fn=OpenMaya.MRampAttribute, shortName="errrt", type="Ramp" )
 
 	# APV Branches overrides
 	lightningBoltNode.hlp.createAtt( name = "radiusRootOverride", fn=numAttr, shortName="rro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
-	lightningBoltNode.hlp.createAtt( name = "radiusRampRoot", fn=OpenMaya.MRampAttribute, shortName="rrrt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "radiusAlongBranchRoot", fn=OpenMaya.MRampAttribute, shortName="rrrt", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "transfertRadiusRoot", fn=numAttr, shortName="trr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
 
 	lightningBoltNode.hlp.createAtt( name = "childLengthRootOverride", fn=numAttr, shortName="clro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
-	lightningBoltNode.hlp.createAtt( name = "childLengthRampRoot", fn=OpenMaya.MRampAttribute, shortName="clrrt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "childLengthAlongPathRoot", fn=OpenMaya.MRampAttribute, shortName="clrrt", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "transfertChildLengthRoot", fn=numAttr, shortName="tclr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
 
 	lightningBoltNode.hlp.createAtt( name = "intensityRootOverride", fn=numAttr, shortName="iro", type=OpenMaya.MFnNumericData.kBoolean, default=0 )	
-	lightningBoltNode.hlp.createAtt( name = "intensityRampRoot", fn=OpenMaya.MRampAttribute, shortName="irrt", type="Ramp" )
+	lightningBoltNode.hlp.createAtt( name = "intensityAlongPathRoot", fn=OpenMaya.MRampAttribute, shortName="irrt", type="Ramp" )
 	lightningBoltNode.hlp.createAtt( name = "transfertIntensityRoot", fn=numAttr, shortName="tir", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
 
 # OUTPUTS
@@ -681,8 +1083,11 @@ def nodeInitializer():
 
 def cleanupClass():
 	delattr(lightningBoltNode,'defaultDetailValue')
+	delattr(lightningBoltNode,'defaultMaxGeneration')
+	delattr(lightningBoltNode,'defaultNumChildren')
+	delattr(lightningBoltNode,'defaultNumChildrenRand')
 	delattr(lightningBoltNode,'lightningModule')
-	delattr(lightningBoltNode,'LMLP')
+	delattr(lightningBoltNode,'LPM')
 	delattr(lightningBoltNode,'hlp')
 
 # initialize the script plug-in
