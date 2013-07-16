@@ -107,6 +107,10 @@ permutation = np.array([151,160,137,91,90,15,
 	138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180] )
 
 class simpNoise():
+	'''
+	coming from
+	http://www.6by9.net/simplex-noise-for-c-and-python/
+	'''
 	"""The gradients are the midpoints of the vertices of a cube."""
 	_grad3 = np.array([
 	[1,1,0], [-1,1,0], [1,-1,0], [-1,-1,0],
@@ -435,10 +439,10 @@ class lightningBoltProcessor:
 	eSPEBR = enum('seedBranching', 'seedShape', 'max')
 
 	# Values Depending on Generation and that are transmitted to the next generation by multiply vector
-	eGEN = enum('numChildren', 'numChildrenRand', 'branchingTime', 'shapeTime', 'shapeFrequency', 'offset', 'max')
+	eGEN = enum('numChildren', 'numChildrenRand', 'branchingTime', 'shapeTime', 'chaosFrequency', 'chaosOffset', 'max')
 
 	# Along Path values Special ( No Transfert to Child )
-	eAPSPE = enum('elevation', 'elevationRand', 'childProbability', 'offset', 'max')
+	eAPSPE = enum('elevation', 'elevationRand', 'childProbability', 'chaosOffset', 'max')
 
 
 	def __init__( self, outSoftwareFunc = None ):
@@ -515,10 +519,10 @@ class lightningBoltProcessor:
 		self.GEN[num] = value
 	def setGENTransfert(self, num, value, valueRoot=None):
 		self.GENTransfert[num] = value
-		if valueRoot:
-			self.GENTransfert_ROOT[num] = valueRoot
-		else:
+		if valueRoot is None:
 			self.GENTransfert_ROOT[num] = value
+		else:
+			self.GENTransfert_ROOT[num] = valueRoot
 
 # Along Path Special Values
 	def getAPSPE(self, num):
@@ -583,8 +587,8 @@ class lightningBoltProcessor:
 		allChildsBranchParentId = []
 		allRandValues = []
 
-		offsetArray = np.empty( (batchSize,self.maxPoints,3), np.float32 )
-		freq = GenValues[lightningBoltProcessor.eGEN.shapeFrequency]
+		chaosOffsetArray = np.empty( (batchSize,self.maxPoints,3), np.float32 )
+		freq = GenValues[lightningBoltProcessor.eGEN.chaosFrequency]
 		noisePos = np.empty( (self.maxPoints,2), np.float32 )
 		noisePos[:,0] = GenValues[lightningBoltProcessor.eGEN.shapeTime]
 
@@ -594,7 +598,7 @@ class lightningBoltProcessor:
 			#sys.stderr.write('branchLength '+str(branchLength)+'\n')
 			noisePos[:,1] = np.linspace(0.0,branchLength*freq,self.maxPoints)
 
-			offsetArray[i] = simp.in2D_outVect(noisePos)
+			chaosOffsetArray[i] = simp.in2D_outVect(noisePos)
 
 			# childs calculations
 			if not doGenerateChilds:
@@ -620,7 +624,7 @@ class lightningBoltProcessor:
 		#sys.stderr.write('test '+str(test)+'\n')
 
 		seedPathPointsView = seedPath.reshape(batchSize,self.maxPoints,3)
-		seedPathPointsView += GenValues[lightningBoltProcessor.eGEN.offset]*offsetArray*APSpeV[:,lightningBoltProcessor.eAPSPE.offset].reshape(1,-1,1)
+		seedPathPointsView += GenValues[lightningBoltProcessor.eGEN.chaosOffset]*chaosOffsetArray*APSpeV[:,lightningBoltProcessor.eAPSPE.chaosOffset].reshape(1,-1,1)
 		#seedPathPointsView += (offsetArray*APArray[:,:,:,lightningBoltProcessor.eAPBR.offset].reshape(1,1,batchSize,self.maxPoints,-1))[0,0]
 		#sys.stderr.write('seedPath '+str(seedPath)+'\n')
 
