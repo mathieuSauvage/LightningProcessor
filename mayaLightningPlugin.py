@@ -7,11 +7,20 @@
 import pymel.core as pm
 
 pm.loadPlugin('/Users/mathieu/Documents/IMPORTANT/Perso/Prog/python/lightningPlugin/mayaLightningPlugin.py')
+
 lightNode = pm.createNode('lightningbolt')
 meshNode = pm.createNode('mesh')
 pm.connectAttr( lightNode+'.outputMesh', meshNode+'.inMesh')
-pm.connectAttr( 'curveShape1.local', lightNode+'.inputCurve')
+pm.connectAttr( 'curveShape1.worldSpace[0]', lightNode+'.inputCurve')
 
+mrVert = pm.createNode('mentalrayVertexColors')
+sh = pm.shadingNode( 'surfaceShader', asShader=True )
+set = pm.sets( renderable=True, noSurfaceShader=True, empty=True)
+pm.connectAttr( sh+'.outColor', set+'.surfaceShader', f=True)
+pm.sets( set, e=True, forceElement=meshNode )
+forceEval = pm.polyEvaluate( meshNode, v=True )
+pm.connectAttr( (meshNode+".colorSet[0].colorName") , (mrVert+".cpvSets[0]") )
+pm.connectAttr( (mrVert+'.outColor'), (sh+".outColor") )
 '''
 
 import sys
@@ -190,8 +199,7 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 	outData = dataCreator.create()
 	meshFn = OpenMaya.MFnMesh()
 
-
-	meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
+	mObj = meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
 
 	# vertexColors
 	scrUtil.createFromList( resultIntensityColors, len(resultIntensityColors))
@@ -200,7 +208,14 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 	scrUtil.createFromList( range(numVertices) , numVertices )
 	MVertexIds = OpenMaya.MIntArray( scrUtil.asIntPtr(), numVertices )
 
+	name = 'lightningIntensity'
+	fName = meshFn.createColorSetDataMesh(name)
+
+	#meshFn.setCurrentColorSetName(name)
+
 	meshFn.setVertexColors( MColors, MVertexIds )
+
+
 	return outData
 
 def loadGeneralLightningScript():
@@ -521,11 +536,15 @@ global proc AElightningboltTemplate( string $nodeName )
 
 		editorTemplate -beginLayout "⟦ Length Attributes ⟧" -collapse 1;
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "length" "transfertLength";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "lengthRand" "transfertLengthRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childLengthAlongPath";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transfertLengthRoot" "childLengthAlongPathRoot";				
+			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transfertLengthRoot" "childLengthAlongPathRoot";
+
 
 			editorTemplate -s "length";
 			editorTemplate -s "transfertLength";
+			editorTemplate -s "lengthRand";
+			editorTemplate -s "transfertLengthRand";
 			editorTemplate -s "childLengthAlongPath";
 			editorTemplate -s "lengthRootOverride";
 			editorTemplate -s "transfertLengthRoot";
@@ -931,6 +950,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			tempTimeShape = acc.get( lightningBoltNode.timeChaos)
 			tempTimeBranching = acc.get( lightningBoltNode.timeBranching)
 			tempChaosOffsetMult = acc.get( lightningBoltNode.chaosOffset)
+			tempLengthRand = acc.get( lightningBoltNode.lengthRand)
+
 
 			# Along Path branches values
 			tempRadiusMult = acc.get( lightningBoltNode.radius)
@@ -949,6 +970,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			tempTransfertNumChildrenRand = acc.get( lightningBoltNode.transfertNumChildrenRand)
 			tempTransfertChaosFrequency = acc.get( lightningBoltNode.transfertChaosFrequency)
 			tempTransfertChaosVibration = acc.get( lightningBoltNode.transfertChaosVibration)
+			tempTransfertLengthRand = acc.get( lightningBoltNode.transfertLengthRand)
 
 
 			# Root overrides
@@ -993,6 +1015,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildren, tempNumChildren )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildrenRand, tempNumChildrenRand )
 			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosOffset, tempChaosOffsetMult )
+			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.lengthRand, tempLengthRand )
 
 			# load the Generation Transfert Factors
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.branchingTime, tempTransfertTimeBranching, tempTransfertTimeBranchingRoot )
@@ -1002,6 +1025,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildrenRand, tempTransfertNumChildrenRand, tempTransfertNumChildrenRandRoot )
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosFrequency, tempTransfertChaosFrequency,tempTransfertChaosFrequencyRoot )
 			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosVibration, tempTransfertChaosVibration )
+			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.lengthRand, tempTransfertLengthRand )
 
 
 			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
@@ -1085,20 +1109,22 @@ def nodeInitializer():
 	lightningBoltNode.hlp.createAtt( name = "timeBranching", fn=unitAttr, shortName="tb", type=OpenMaya.MFnUnitAttribute.kTime, default=0.0, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "chaosFrequency", fn=numAttr, shortName="sf", type=OpenMaya.MFnNumericData.kDouble, default=0.2, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "chaosVibration", fn=numAttr, shortName="cv", type=OpenMaya.MFnNumericData.kDouble, default=0.35, exceptAffectList=['samplingDummyOut'] )
-
 	lightningBoltNode.hlp.createAtt( name = "numChildren", fn=numAttr, shortName="nc", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultNumChildren, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "numChildrenRand", fn=numAttr, shortName="ncr", type=OpenMaya.MFnNumericData.kInt, default=lightningBoltNode.defaultNumChildrenRand, exceptAffectList=['samplingDummyOut'] )
-	lightningBoltNode.hlp.createAtt( name = "chaosOffset", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
+	lightningBoltNode.hlp.createAtt( name = "chaosOffset", fn=numAttr, shortName="om", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )
+	lightningBoltNode.hlp.createAtt( name = "lengthRand", fn=numAttr, shortName="lr", type=OpenMaya.MFnNumericData.kDouble, default=1.5, exceptAffectList=['samplingDummyOut'] )
+
 
 	# Generation Transfert Factors
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeBranching", fn=numAttr, shortName="ttb", type=OpenMaya.MFnNumericData.kDouble, default=3.0, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "transfertTimeShape", fn=numAttr, shortName="tts", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertChaosFrequency", fn=numAttr, shortName="tsf", type=OpenMaya.MFnNumericData.kDouble, default=1.5, exceptAffectList=['samplingDummyOut'] )
 	lightningBoltNode.hlp.createAtt( name = "transfertChaosVibration", fn=numAttr, shortName="tcv", type=OpenMaya.MFnNumericData.kDouble, default=0.75, exceptAffectList=['samplingDummyOut'] )
-
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildren", fn=numAttr, shortName="tnc", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertNumChildrenRand", fn=numAttr, shortName="tncr", type=OpenMaya.MFnNumericData.kDouble, default=1.0, exceptAffectList=['samplingDummyOut'] )	
 	lightningBoltNode.hlp.createAtt( name = "transfertChaosOffset", fn=numAttr, shortName="to", type=OpenMaya.MFnNumericData.kDouble, default=0.5, exceptAffectList=['samplingDummyOut'] )
+	lightningBoltNode.hlp.createAtt( name = "transfertLengthRand", fn=numAttr, shortName="tlr", type=OpenMaya.MFnNumericData.kDouble, default=1.5, exceptAffectList=['samplingDummyOut'] )
+
 
 # APV Branches
 	lightningBoltNode.hlp.createAtt( name = "radiusAlongBranch", fn=OpenMaya.MRampAttribute, shortName="rr", type="Ramp" )
