@@ -18,8 +18,6 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
-- faire un length rand
-- child probability
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
 - optimiser le noise
 ================================================================================
