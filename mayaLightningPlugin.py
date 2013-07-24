@@ -32,6 +32,166 @@ import maya.mel as mel
 kPluginNodeName = "lightningbolt"
 kPluginNodeId = OpenMaya.MTypeId(0x8700B)
 
+
+#------------------- Here is the Helper Class to make to process of creating, accessing and setting the influence of attributes less tedious
+
+class attDef:
+	def __init__( self, index, mObject, name , shortName, addAttr  ):
+		self.mObject = mObject
+		self.index = index
+		self.name = name
+		self.shortName = shortName
+		self.addAttr = addAttr
+
+class computeGroup:
+	def __init__( self, name ):
+		self.OUTS = []
+		self.INS = []
+		self.name = name
+		self.dependencies = []
+		self.affect = []
+
+	def addIN( self, index ):
+		self.INS.append( index )
+
+	def addOUT( self, index ):
+		self.OUTS.append( index )
+
+	def addAffect( self, computeGp ):
+		if computeGp in self.affect:
+			raise 'computeGroup: group [ '+self.name+' ] already affect [ '+computeGp.name+' ], error'
+		self.affect.append(computeGp)
+
+	def addDependencies( self, dependencies ):
+		for d in dependencies:
+			if d in self.dependencies:
+				raise 'computeGroup: group [ '+self.name+' ] depend already on [ '+d.name+' ], error'
+			self.dependencies.append( d )
+			d.addAffect( self )
+
+def enum(*sequential, **named):
+	enums = dict(zip(sequential, range(len(sequential))), **named)
+	return type('Enum', (), enums)
+
+eType = enum('double', 'int', 'bool', 'time', 'curve', 'mesh', 'ramp', 'maxType') 
+
+class MayaAttHelper:	
+	def __init__(self,nodeClass):
+		self.attributes = []
+		self.nodeClass = nodeClass
+		self.computeGroups = {}
+
+	def createAtt( self, name, shortName, type, computeGpName, isInput=True, default=None, addAttr=True ):
+		attIndex = len(self.attributes)
+
+		for a in self.attributes: # check uniqueness of names
+			if a.name == name :
+				raise 'MayaAttHelper: attribute with the name [ '+name+' ] already exists'
+			if a.shortName == shortName :
+				raise 'MayaAttHelper: attribute with the short name [ '+shortName+' ] already exists'
+
+		fn = None
+		if type == eType.double or type == eType.int or type == eType.bool :
+			fn = OpenMaya.MFnNumericAttribute().create
+		elif type == eType.curve or type == eType.mesh :
+			fn = OpenMaya.MFnTypedAttribute().create
+		elif type == eType.time :
+			fn = OpenMaya.MFnUnitAttribute().create
+		elif type == eType.ramp :
+			fn = OpenMaya.MRampAttribute.createCurveRamp
+		else:
+			raise 'MayaAttHelper: unsupported type to create attribute'
+
+		createCall = None
+		if type != eType.ramp :
+			fn.setKeyable(isInput)
+			fn.setWritable(isInput)
+			createCall = fn.create
+		else:
+			createCall = fn.createCurveRamp
+
+		mObject = None
+		if default is not None:
+			mObject = createCall( name, shortName, default )
+		else:
+			mObject = createCall( name, shortName )
+
+		att = attDef(attIndex, mObject, name, shortName, addAttr )
+		# find the compute Group or create one
+		computeGrpToUse = None
+		if computeGpName in self.computeGroups :
+			computeGrpToUse = computeGpName
+		else:
+			computeGrpToUse = computeGroup(computeGpName)
+			self.computeGroups[computeGpName] = computeGrpToUse
+			setattr(self.nodeClass, computeGpName, computeGrpToUse )
+
+		if isInput:
+			computeGrpToUse.addIN( attIndex )
+		else:
+			computeGrpToUse.addOUT( attIndex )
+
+		self.attributes.append( att )
+		setattr(self.nodeClass, name, mObject )
+		setattr(self.nodeClass, name+'Index', attIndex ) # maybe?
+
+	def recursiveDeclareAffect( self, computeGp ):
+		globalInList = []
+		for cpGpDependent in computeGp.dependencies :
+			attInSet = self.recursiveDeclareAffect( cpGpDependent )
+			globalInList = set().union( globalInList , attInList )
+		
+		globalInList = set().union( globalInList , computeGp.INS )
+		# DO affects
+		for attOut in computeGp.OUTS :
+			for attIn in computeGp.INS :
+				sys.stderr.write(attIn.name+" affect "+attOut.name+"\n")
+				self.nodeClass.attributeAffects( attIn.mObject, attOut.mObject )
+		globalInList = set().union( globalInList , computeGp.OUTS )
+		return globalInList
+
+	def finalizeAttributeInitialization( self ):
+		#---- first check the compute groups, if one has no OUT then create one "dummy" out for it
+		for cpGp in self.computeGroups:
+			if len(cpGp.OUTS) == 0:
+				self.createAtt( 'dummyOUT_'+cpGp.name, 'dO_'+cpGp.name, eType.int , cpGp.name, False )
+		#---- then add all Attributes that need to be added to the node
+		for a in self.attributes:
+			if not a.addAttr: # some attributes don't need to be added like double3
+				continue
+			self.nodeClass.addAttribute( a.mObject )
+		#---- then we can declare affects
+		for cpGpName, cpGp  in self.computeGroups.items():
+			if len(cpGp.affect) > 0: # this compute group affect something it is not a top affect group, skip
+				continue
+			self.recursiveDeclareAffect( cpGp )
+
+	def addGroupDependencies( self, computeGpName,  computeGpDependencies ):
+		if not computeGpName in self.computeGroups:
+			raise 'MayaAttHelper: compute group [ '+computeGpName+' ] does not exist'
+		for cpGp in computeGpDependencies :
+			if not cpGp in self.computeGroups:
+				raise 'MayaAttHelper: compute group [ '+cpGp+' ] does not exist'
+
+		self.computeGroups[computeGpName].addDependencies( [ self.computeGroups[cpGp] for cpGp in computeGpDependencies ] )
+
+
+'''
+class attHelper:
+	def __init__( self, mObject, name, shortName, type, toAdd, affectedOutputs=None ):
+		self.mObject = mObject
+		self.name = name
+		self.shortName = shortName
+		self.type = type
+		self.toAdd = toAdd
+		self.affectedOutputs = affectedOutputs
+
+	def isEqualToPlug( self, plug ):
+		return plug == self.mObject
+
+	def 
+'''
+
 class attributeAccess:
 	def __init__(self, mObject, index, isInput):
 		self.mObject = mObject
@@ -486,7 +646,7 @@ global proc LGHTAEmakeLargeRamp( string $nodeAttr,
 
 global proc LGHTAERampControl(string $nodeAttr)
 {
-	LGHTAEmakeLargeRamp( $nodeAttr,1,1,0,0, 1 );
+	LGHTAEmakeLargeRamp( $nodeAttr,1,1,0,0, 0 );
 }
 
 global proc LGHTAERampControl_Replace (string $nodeAttr)
@@ -539,7 +699,6 @@ global proc AElightningboltTemplate( string $nodeName )
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "lengthRand" "transfertLengthRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childLengthAlongPath";
 			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transfertLengthRoot" "childLengthAlongPathRoot";
-
 
 			editorTemplate -s "length";
 			editorTemplate -s "transfertLength";
@@ -858,10 +1017,10 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			''')
 	#----------------------------------------------------------------------------
 
-	# let's have the lightningModule here as a static
-	lightningModule = loadGeneralLightningScript()
+	# let's have the LM here as a static
+	LM = loadGeneralLightningScript()
 	# shortcuts
-	LPM = lightningModule.lightningBoltProcessor
+	LPM = LM.lightningBoltProcessor
 
 	# defaults
 	defaultDetailValue = 1
@@ -891,7 +1050,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 
 			tempDetail = acc.get(lightningBoltNode.detail)
 			# ***** initialisation of the sizes of arrays in the Processor (all Along Path arrays depend on detail)
-			self.LP.initialize(tempDetail)
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.detail, tempDetail )
+			#self.LP.initialize(tempDetail)
 
 			tempRadiusRamp = acc.get(lightningBoltNode.radiusAlongBranch)
 			tempIntensityRamp = acc.get(lightningBoltNode.intensityAlongPath)
@@ -908,14 +1068,14 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			tempElevationRandRampRoot = acc.getIf( lightningBoltNode.elevationRootOverride, lightningBoltNode.elevationRandAlongBranchRoot )
 			tempChaosOffsetRampRoot = acc.getIf( lightningBoltNode.chaosOffsetRootOverride, lightningBoltNode.chaosOffsetAlongBranchRoot )
 
-			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.radius ), tempRadiusRamp, tempRadiusRampRoot )
-			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.intensity ), tempIntensityRamp, tempIntensityRampRoot )
-			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LPM.eAPBR.length ), tempChildLengthRamp, tempChildLengthRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.radius ), tempRadiusRamp, tempRadiusRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.intensity ), tempIntensityRamp, tempIntensityRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.length ), tempChildLengthRamp, tempChildLengthRampRoot )
 
-			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.chaosOffset ), tempChaosOffsetRamp, tempChaosOffsetRampRoot )
-			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevation ), tempElevationRamp, tempElevationRampRoot )
-			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.elevationRand ), tempElevationRandRamp, tempElevationRandRampRoot )
-			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LPM.eAPSPE.childProbability ), tempChildProbabilityRamp )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.chaosOffset ), tempChaosOffsetRamp, tempChaosOffsetRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevation ), tempElevationRamp, tempElevationRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevationRand ), tempElevationRandRamp, tempElevationRandRampRoot )
+			setupAPVInputFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), tempChildProbabilityRamp )
 
 			outputHandle = lightningBoltNode.hlp.getAttValueOrHdl( lightningBoltNode.samplingDummyOut, thisNode,data)
 			outputHandle.setInt(1)
@@ -923,8 +1083,13 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 
 		elif plug == lightningBoltNode.outputMesh.mObject : # outMesh
 			sys.stderr.write('compute mesh\n')
-
 			thisNode = self.thisMObject()
+
+			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
+			plugDummy = OpenMaya.MPlug( thisNode, lightningBoltNode.samplingDummyOut.mObject) 
+			triggerSampling = plugDummy.asInt()
+
+		#-------- collect attributes from the node
 			acc = ATTAccessor( lightningBoltNode.hlp, thisNode, data )
 
 			# global values
@@ -984,64 +1149,64 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			tempTransfertNumChildrenRandRoot = acc.getIf( lightningBoltNode.numChildrenRootOverride, lightningBoltNode.transfertNumChildrenRandRoot )
 			tempTransfertChaosFrequencyRoot = acc.getIf( lightningBoltNode.chaosOffsetRootOverride, lightningBoltNode.transfertChaosFrequencyRoot )
 
-			# force evaluation if needed of ramp samples (this will trigger the plug for outDummyAtt of the compute)
-			plugDummy = OpenMaya.MPlug( thisNode, lightningBoltNode.samplingDummyOut.mObject) 
-			triggerSampling = plugDummy.asInt()
-
-
-			outputHandle = acc.get(lightningBoltNode.outputMesh)
-
 			tempCurve = acc.get(lightningBoltNode.inputCurve)
 			if tempCurve.isNull():
 				sys.stderr.write('there is no curve!\n')
 				data.setClean(plug)
 				return
 
+			outputHandle = acc.get(lightningBoltNode.outputMesh)
+		#-------- END collect attributes from the node
+
 			fnNurbs = OpenMaya.MFnNurbsCurve( tempCurve )
 			pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs, tempChildLengthMult )
 
-			#sys.stderr.write('child length '+str(tempChildLengthMult*cvLength)+'\n')
-
-			# load the Along Path Values inputs of the node into the processor			
-			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.radius, tempRadiusMult )
-			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.intensity, tempIntensityMult )
-			self.LP.setAPVFactors( lightningBoltNode.LPM.eAPBR.length, cvLength )
-
-			# load the Generation inputs
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosFrequency, tempChaosFrequency )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosVibration, tempChaosVibration )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosTime, tempTimeShape.value() )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.branchingTime, tempTimeBranching.value() )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildren, tempNumChildren )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.numChildrenRand, tempNumChildrenRand )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.chaosOffset, tempChaosOffsetMult )
-			self.LP.setGENValue( lightningBoltNode.LPM.eGEN.lengthRand, tempLengthRand )
-
-			# load the Generation Transfert Factors
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.branchingTime, tempTransfertTimeBranching, tempTransfertTimeBranchingRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosTime, tempTransfertTimeShape, tempTransfertTimeShapeRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosOffset, tempTransfertChaosOffset, tempTransfertChaosOffsetRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildren, tempTransfertNumChildren, tempTransfertNumChildrenRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.numChildrenRand, tempTransfertNumChildrenRand, tempTransfertNumChildrenRandRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosFrequency, tempTransfertChaosFrequency,tempTransfertChaosFrequencyRoot )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.chaosVibration, tempTransfertChaosVibration )
-			self.LP.setGENTransfert( lightningBoltNode.LPM.eGEN.lengthRand, tempTransfertLengthRand )
-
-
-			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
-			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.length, tempTransfertChildLength, tempTransfertChildLengthRoot )
-			self.LP.setAPVTransfert( lightningBoltNode.LPM.eAPBR.intensity, tempTransfertIntensity, tempTransfertIntensityRoot )
-			
-
-			#self.LP.resetProcessor()
+			# load the list of points from the curve into the processor
 			self.LP.addSeedPointList(pointList)
 
-			self.LP.secondaryChaosMinClamp = tempSecondaryChaosMinClamp
-			self.LP.secondaryChaosMaxClamp = tempSecondaryChaosMaxClamp
-			self.LP.secondaryChaosMinRemap = tempSecondaryChaosMinRemap
-			self.LP.secondaryChaosMaxRemap = tempSecondaryChaosMaxRemap
+			# load the Along Path Values inputs of the node into the processor			
+			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.radius, tempRadiusMult )
+			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.intensity, tempIntensityMult )
+			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.length, cvLength )
 
-			outputData = self.LP.process(tempMaxGeneration, tempTubeSides, tempVibrationTimeFactor, tempSecondaryChaosFreqFactor, tempSeedChaos, tempSeedBranching)
+			# load the Generation inputs
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosFrequency, tempChaosFrequency )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosVibration, tempChaosVibration )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosTime, tempTimeShape.value() )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.branchingTime, tempTimeBranching.value() )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.numChildren, tempNumChildren )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.numChildrenRand, tempNumChildrenRand )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosOffset, tempChaosOffsetMult )
+			self.LP.setGENValue( lightningBoltNode.LM.eGEN.lengthRand, tempLengthRand )
+
+			# load the Generation Transfert Factors
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.branchingTime, tempTransfertTimeBranching, tempTransfertTimeBranchingRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosTime, tempTransfertTimeShape, tempTransfertTimeShapeRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosOffset, tempTransfertChaosOffset, tempTransfertChaosOffsetRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.numChildren, tempTransfertNumChildren, tempTransfertNumChildrenRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.numChildrenRand, tempTransfertNumChildrenRand, tempTransfertNumChildrenRandRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosFrequency, tempTransfertChaosFrequency,tempTransfertChaosFrequencyRoot )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosVibration, tempTransfertChaosVibration )
+			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.lengthRand, tempTransfertLengthRand )
+
+
+			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.radius, tempTransfertRadius, tempTransfertRadiusRoot )
+			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.length, tempTransfertChildLength, tempTransfertChildLengthRoot )
+			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.intensity, tempTransfertIntensity, tempTransfertIntensityRoot )
+			
+			
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.maxGeneration, tempMaxGeneration )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.tubeSide, tempTubeSides )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.vibrationTimeFactor, tempVibrationTimeFactor )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.seedChaos, tempSeedChaos )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.seedBranching, tempSeedBranching )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.chaosSecondaryFreqFactor, tempSecondaryChaosFreqFactor )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMinClamp, tempSecondaryChaosMinClamp )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMaxClamp, tempSecondaryChaosMaxClamp )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMinRemap, tempSecondaryChaosMinRemap )
+			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMaxRemap, tempSecondaryChaosMaxRemap )
+
+			outputData = self.LP.process()
 
 			#sys.stderr.write('end of compute\n')
 
@@ -1085,7 +1250,6 @@ def nodeInitializer():
 	unitAttr = OpenMaya.MFnUnitAttribute()
 	typedAttr = OpenMaya.MFnTypedAttribute()
 	numAttr = OpenMaya.MFnNumericAttribute()
-	#compAttr = OpenMaya.MFnCompoundAttribute()
 
 	lightningBoltNode.hlp = attCreationHlp(lightningBoltNode)
 
@@ -1193,7 +1357,7 @@ def cleanupClass():
 	delattr(lightningBoltNode,'defaultMaxGeneration')
 	delattr(lightningBoltNode,'defaultNumChildren')
 	delattr(lightningBoltNode,'defaultNumChildrenRand')
-	delattr(lightningBoltNode,'lightningModule')
+	delattr(lightningBoltNode,'LM')
 	delattr(lightningBoltNode,'LPM')
 	delattr(lightningBoltNode,'hlp')
 
