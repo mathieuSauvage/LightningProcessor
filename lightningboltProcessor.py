@@ -19,7 +19,7 @@ a python code as efficient as possible
 ================================================================================
 * TODO:
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
-- optimiser le noise
+- optimize more noise class
 ================================================================================
 '''
 
@@ -490,7 +490,7 @@ def npaRandSphereElevation( aElevation, aAmplitude, aPhi, aAmplitudeRand,  N ):
 	return sphPoints
 
 # Global parameters
-eGLOBAL = enum('detail','maxGeneration','tubeSide','seedChaos','seedBranching','vibrationTimeFactor', 'chaosSecondaryFreqFactor', 'secondaryChaosMinClamp', 'secondaryChaosMaxClamp', 'secondaryChaosMinRemap', 'secondaryChaosMaxRemap', 'max')
+eGLOBAL = enum('time','detail','maxGeneration','tubeSide','seedChaos','seedBranching','vibrationTimeFactor', 'chaosSecondaryFreqFactor', 'secondaryChaosMinClamp', 'secondaryChaosMaxClamp', 'secondaryChaosMinRemap', 'secondaryChaosMaxRemap', 'max')
 
 # different types of values
 	# default : On value for the overall path
@@ -526,23 +526,10 @@ class lightningBoltProcessor:
 
 		self.timer = avgTimer(30)
 
-		self.detail = -1
 		self.maxPoints = 0
 
 		self.randGeneralSeedChaos = nRand(0)
 		self.randGeneralSeedBranching = nRand(0)
-
-		self.GLOBALS = [None]*eGLOBAL.max
-		self.setGlobalValue( eGLOBAL.maxGeneration, 0 )
-		self.setGlobalValue( eGLOBAL.tubeSide, 4 )
-		self.setGlobalValue( eGLOBAL.vibrationTimeFactor, 150.0 )
-		self.setGlobalValue( eGLOBAL.seedChaos, 0 )
-		self.setGlobalValue( eGLOBAL.seedBranching, 0 )
-		self.setGlobalValue( eGLOBAL.chaosSecondaryFreqFactor, 2.0 )
-		self.setGlobalValue( eGLOBAL.secondaryChaosMinClamp, 0.25 )
-		self.setGlobalValue( eGLOBAL.secondaryChaosMaxClamp, 0.75 )
-		self.setGlobalValue( eGLOBAL.secondaryChaosMinRemap, 0.5 )
-		self.setGlobalValue( eGLOBAL.secondaryChaosMaxRemap, 1.0 )
 
 		# APVariations are Along Path Variations (sampled curves), APVariations are the variations that are given to the system as inputs (they are maybe set by external ramps)
 		# APVariations is a big numpy array where lines are the parameter along the path and column are alls the attributes
@@ -575,22 +562,18 @@ class lightningBoltProcessor:
 		self.startSeedPoints = []
 		self.numStartSeedBranch = 0
 
-		#for testing
-		#self.setValue(lightningBoltProcessor.eV.numChildren, 2.0 ) 
-		#self.setValue(lightningBoltProcessor.eV.numChildrenRand, 2.0 ) 
-		#self.setGenericValue(lightningBoltProcessor.eGV.seedBranching, 437 )
-		#self.setGenericValue(lightningBoltProcessor.eGV.seedChaos, 20 )
-		#self.setAPVTransfert( lightningBoltProcessor.eAPV.radius, 0.25)
+		self.GLOBALS = [None]*eGLOBAL.max
+		self.setGlobalValue( eGLOBAL.maxGeneration, 0 )
+		self.setGlobalValue( eGLOBAL.tubeSide, 4 )
+		self.setGlobalValue( eGLOBAL.vibrationTimeFactor, 150.0 )
+		self.setGlobalValue( eGLOBAL.seedChaos, 0 )
+		self.setGlobalValue( eGLOBAL.seedBranching, 0 )
+		self.setGlobalValue( eGLOBAL.chaosSecondaryFreqFactor, 2.0 )
+		self.setGlobalValue( eGLOBAL.secondaryChaosMinClamp, 0.25 )
+		self.setGlobalValue( eGLOBAL.secondaryChaosMaxClamp, 0.75 )
+		self.setGlobalValue( eGLOBAL.secondaryChaosMinRemap, 0.5 )
+		self.setGlobalValue( eGLOBAL.secondaryChaosMaxRemap, 1.0 )
 
-	def initialize( self, detail ):
-		if detail == self.detail:
-			return
-		self.detail = detail
-		self.maxPoints = 2 + 2**detail
-		self.APBR = np.zeros((self.maxPoints,eAPBR.max),np.float32)
-		self.APBR_ROOT = np.zeros((self.maxPoints,eAPBR.max),np.float32)
-		self.APSPE = np.zeros((self.maxPoints,eAPSPE.max),np.float32)
-		self.APSPE_ROOT = np.zeros((self.maxPoints,eAPSPE.max),np.float32)
 
 # Global parameters
 	def setGlobalValue( self, num, value):		
@@ -649,10 +632,15 @@ class lightningBoltProcessor:
 		self.startSeedPoints.extend( pointList )
 		self.numStartSeedBranch =  self.numStartSeedBranch + 1
 
-	def initializeStartBranches( self, seedChaos, seedBranching):
-		self.randGeneralSeedChaos = nRand(seedChaos)
-		self.randGeneralSeedBranching = nRand(seedBranching)
+	def initializeStartBranches( self ):
+		self.randGeneralSeedChaos = nRand(self.GLOBALS[eGLOBAL.seedChaos])
+		self.randGeneralSeedBranching = nRand(self.GLOBALS[eGLOBAL.seedBranching])
 
+		# set time
+		self.GEN[eGEN.chaosTime] *= self.GLOBALS[eGLOBAL.time]
+		self.GEN[eGEN.branchingTime] *= self.GLOBALS[eGLOBAL.time]
+
+		# prepare the branch dependent vectors
 		startSeedBranchesAPVMult = []
 		startSeedBranchesSPEV = []
 		for i in range(self.numStartSeedBranch):
@@ -676,6 +664,8 @@ class lightningBoltProcessor:
 
 #sys.stderr.write('seedPathPointsView '+str(seedPathPointsView)+'\n')
 	def generate( self, batch, APBranchV, APSpeV, APBranchTransfert, GenTransfert, isLooping, doGenerateChilds ):
+		epsilon = 0.00001
+
 		# unpack
 		batchSize, seedPath, APBranchMults, GenValues, SPEBRValues = batch
 
@@ -782,7 +772,6 @@ class lightningBoltProcessor:
 
 			randBranch = nRand(SPEBRValues[i,eSPEBR.seedBranching])
 			branchChildNumber = int(GenValues[eGEN.numChildren]) + randBranch.randInt(0, int(GenValues[eGEN.numChildrenRand] ) )
-			epsilon = 0.00001
 			randArray = randBranch.npaRand(epsilon, 1.0-epsilon, (branchChildNumber, 6) )
 			allRandValues.extend( randArray.tolist() )
 			allChildsBranchParentId.extend( [i]*branchChildNumber )
@@ -913,14 +902,16 @@ class lightningBoltProcessor:
 			aChildRandomsArray = aChildRandomsArray.T
 
 			aChildRandomsArray[0,:]*=float(self.maxPoints-1) # bring the parameters back to [0,maxPoints-1]
+			#sys.stderr.write('aChildRandomsArray[0,:] '+str(aChildRandomsArray[0,:])+'\n')
 			indexT0 = aChildRandomsArray[0,:].astype(np.uint32)
 			blend = aChildRandomsArray[0,:] # VIEW
 			blend -= indexT0
 			blend = blend.reshape(-1,1)
 
-			indexT0 = (float(self.maxPoints-1)*APSpeV[indexT0,eAPSPE.childProbability]).astype(np.uint32)
+			indexT0 = (float(self.maxPoints-1)* np.clip( APSpeV[indexT0,eAPSPE.childProbability], epsilon,1.0-epsilon )  ).astype(np.uint32)
 
 		# Get the Along Path Per Generation Values for the elevation and elevationRand for all theses childs
+			#sys.stderr.write('APSpeV elevation '+str(APSpeV[:,eAPSPE.elevation])+'\n')
 			APGenT0 = APSpeV[indexT0,eAPSPE.elevation:eAPSPE.elevationRand+1]
 			APGenChildElevationAndElevationRand =  APGenT0 + blend*( APSpeV[indexT0+1,eAPSPE.elevation:eAPSPE.elevationRand+1] - APGenT0 )
 
@@ -1043,39 +1034,25 @@ class lightningBoltProcessor:
 		return frames, APBranchesArray[:,:,eAPBR.intensity], childsBatch
 
 	def process(self ):		
-		#sys.stderr.write('chaosSecondaryFreqFactor '+str(self.chaosSecondaryFreqFactor) +'\n' )
-
-
-		startSeedBranchesAPVMult, startSeedBranchesSPEV = self.initializeStartBranches(	self.GLOBALS[eGLOBAL.seedChaos]
-, self.GLOBALS[eGLOBAL.seedBranching])
-
-		self.timer.start()
-
 		currentGeneration = 0
-
-		#firstGenerationAPBranch  = self.APBR_ROOT
-		#normalAPBranch = self.APBR
-		#firstGenerationAPSpe  = self.APSPE_ROOT
-		#normalAPSpe = self.APSPE
-
 		# circle template for tube extrusion
-		#tubeSide = 4
-
 		pointsOfCircle = np.zeros( (4,self.GLOBALS[eGLOBAL.tubeSide]), np.float32 )
 		pointsOfCircle[1] = np.sin(np.linspace(1.5*np.pi,-np.pi*.5, self.GLOBALS[eGLOBAL.tubeSide], endpoint=False))
 		pointsOfCircle[2] = np.cos(np.linspace(1.5*np.pi,-np.pi*.5, self.GLOBALS[eGLOBAL.tubeSide], endpoint=False))
 		pointsOfCircle[3] = np.ones(self.GLOBALS[eGLOBAL.tubeSide])
 		pointsOfCircle = pointsOfCircle.T
-
 		# intensity color template
 		colorTemplate = np.ones( (self.GLOBALS[eGLOBAL.tubeSide],4), np.float32 )
+
+		startSeedBranchesAPVMult, startSeedBranchesSPEV = self.initializeStartBranches()
+
+		self.timer.start()
 
 		# --- create the first datas (seedPath, attributes ) to process 
 		startSeedPath = np.array( self.startSeedPoints )
 		startSeedAPVMult = np.array( [startSeedBranchesAPVMult] ) 
 		startSeedBranchSpeValues = np.array( startSeedBranchesSPEV )
 		
-
 		APBranch = self.APBR_ROOT
 		APBranchTransfert = self.APBRTransfert_ROOT
 		APSpe = self.APSPE_ROOT
@@ -1117,16 +1094,8 @@ class lightningBoltProcessor:
 		# here deduce points from frame and circles and add them to resultPoints
 		# transform a circle of point for each frame
 		resultPoints = [ coord for array in resultFrames for coord in ((np.inner(array,pointsOfCircle)).transpose(0,2,1)).reshape(-1).tolist() ]
-
-		#sys.stderr.write('colorTemplate '+str(colorTemplate)+'\n')
-		#sys.stderr.write('resultIntensities '+str(resultIntensities)+'\n')
-		#sys.stderr.write('resultIntensities[0]*colorTemplate '+str(colorTemplate*resultIntensities[0][:,np.newaxis,np.newaxis])+'\n')
 		resultIntensityColors = [ coord for array in resultIntensities for coord in (colorTemplate*array[:,np.newaxis,np.newaxis]).reshape(-1).tolist() ]
-		#resultPoints = [ coord for array in resultFrames for k in range(len(array)) for point in (np.dot(circles[k],array[k])).tolist() for coord in point  ]
-
 		#sys.stderr.write('resultPoints '+str(resultPoints)+'\n')
-		#sys.stderr.write('resultIntensityColors '+str(resultIntensityColors)+'\n')
-		#sys.stderr.write('num points '+str(len(resultPoints))+'\n')
 
 		resultLoopingPoints = [] # TODO
 		numLoopingLightningBranch = 0 # TODO
@@ -1135,9 +1104,10 @@ class lightningBoltProcessor:
 
 		sys.stderr.write('time '+str(average)+'\n')
 
-		# We reset the processor
+		# We reset the processor before leaving
 		self.startSeedPoints = []
 		self.numStartSeedBranch = 0
 
+		# then we call the external (software-dependant meshing)
 		return self.outSoftwareFunc( resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, resultIntensityColors, self.maxPoints, self.GLOBALS[eGLOBAL.tubeSide] )
 
