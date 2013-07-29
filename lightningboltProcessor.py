@@ -19,7 +19,6 @@ a python code as efficient as possible
 ================================================================================
 * TODO:
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
-- optimize more noise class
 ================================================================================
 '''
 
@@ -106,7 +105,7 @@ permutation = np.array([151,160,137,91,90,15,
 
 class simpNoise():
 	'''
-	coming from
+	noise algorithm transformed from
 	http://www.6by9.net/simplex-noise-for-c-and-python/
 	'''
 	"""The gradients are the midpoints of the vertices of a cube."""
@@ -115,33 +114,96 @@ class simpNoise():
 	[1,0,1], [-1,0,1], [1,0,-1], [-1,0,-1],
 	[0,1,1], [0,-1,1], [0,1,-1], [0,-1,-1]], np.int)
 
-	def __init__(self, seed=0):
-		#sys.stderr.write('simpNoise.permutation'+str(permutation) +'\n' )
-
+	def __init__(self, seed=0, maxDimensionOut=4):
 		self.nprndState = np.random.RandomState( int(seed) )
 
-		#np.random.seed( int(seed) )
-		#test = np.array([5,7,2,4], np.int )
-		#np.random.shuffle( test )
+		# perm is the "seed" for the simplex noise, we need one seed for each dimension we want to output
+		self.perm = np.tile( permutation , (maxDimensionOut,1) )
+		for i in range(maxDimensionOut):
+			self.nprndState.shuffle( self.perm[i] )
+		self.perm = np.tile( self.perm , (2,1,1) )
+		self.perm = self.perm.transpose(1,0,2).reshape(maxDimensionOut,-1)
 
-		#sys.stderr.write('test '+str(test) +'\n' )
+	def in2D_outVectDim( self, noiseCoords, permMat ):
+		numValues = len(noiseCoords)
+		outputVectorDimension = len(permMat)
+		
+		# Skew the input space to determine which simplex cell we're in
+		# Hairy skew factor for 2D
+		ij2 = noiseCoords.copy()
+		s2 = noiseCoords.sum(-1)*_CONST1#------------
+		ij2.transpose((1,0))[:] += s2#------------
+		ij2 = ij2.astype(int)#------------
 
-		#sys.stderr.write('self.nprndState.shuffle(permutation) '+str(self.nprndState.shuffle(permutation)) +'\n' )
-		self.permX = permutation.copy()
-		self.permY = permutation.copy()
-		self.permZ = permutation.copy()
-		self.permW = permutation.copy()
-		self.nprndState.shuffle(self.permX)
-		self.nprndState.shuffle(self.permY)
-		self.nprndState.shuffle(self.permZ)
-		self.nprndState.shuffle(self.permW)
+		t2 = ij2.sum(-1).astype(float) * _CONST2 #------------
 
-		self.permX = np.tile( self.permX , 2)
-		self.permY = np.tile( self.permY , 2)
-		self.permZ = np.tile( self.permZ , 2)
-		self.permW = np.tile( self.permW , 2)
-		#sys.stderr.write('self.permX'+str(self.permX) +'\n' )
+		# Work out the hashed gradient indices of the three simplex corners
+		ii = ij2[:,0] & 255# i & 255
+		jj = ij2[:,1] & 255#j & 255
 
+		# Unskew the cell origin back to (x,y) space
+		XY02 = ij2.astype(float)#------------
+		XY02.transpose((1,0))[:] -= t2#------------
+
+		# The x,y distances from the cell origin
+		#coord02 = noiseCoords.copy()
+		#coord02 -= XY02#------------
+
+		coord = np.tile( noiseCoords - XY02, (3,1,1) )
+		#sys.stderr.write('coord '+str( coord  ) +'\n' )
+
+		# For the 2D case, the simplex shape is an equilateral triangle.
+		# Determine which simplex we are in.
+		
+		# Offsets for second (middle) corner of simplex in (i,j) coords
+		positiveIds2 = np.where( coord[0,:,0]>coord[0,:,1] )#------------
+		ij12 = np.tile( [0,1], (numValues,1))#------------
+		ij12[positiveIds2] = [1,0]#------------
+
+		coord[1] -= ij12 - _CONST2
+		coord[2] += (2.0 * _CONST2 - 1.0)
+
+		#sys.stderr.write('coord '+str( coord  ) +'\n' )
+
+		Gcoord = np.tile( coord, (1,1,outputVectorDimension) ).reshape(3,-1,outputVectorDimension,2)
+		#sys.stderr.write('Gcoord '+str(Gcoord) +'\n' )
+
+	 	coordMatrix = np.tile( ii, (3,outputVectorDimension,1) )
+		#sys.stderr.write('coordMatrix '+str(coordMatrix) +'\n' )
+	 	coordMatrix[1,:] += ij12[:,0]
+	 	coordMatrix[2,:] += 1		
+		coordMatrix[0,:] += permMat[:outputVectorDimension,jj]
+		coordMatrix[1,:] += permMat[:outputVectorDimension,jj+ij12[:,1]]
+		coordMatrix[2,:] += permMat[:outputVectorDimension,jj+1]
+		for i in range(outputVectorDimension):
+			coordMatrix[:,i] = [ permMat[i, coordMatrix[0,i] ], permMat[i, coordMatrix[1,i] ], permMat[i, coordMatrix[2,i] ] ]
+
+		coordMatrix = coordMatrix.transpose(0,2,1).reshape(-1,outputVectorDimension)
+		coordMatrix %= 12
+		#sys.stderr.write('coordMatrix '+str(coordMatrix) +'\n' )
+
+		tGlob = .5 - (coord**2).sum(-1)
+		#sys.stderr.write('tGlob '+str(tGlob) +'\n' )
+		allIndPos = np.where( tGlob.reshape(-1) >=0.0 ) 
+		#sys.stderr.write('allIndPos '+str(allIndPos) +'\n' )
+		tGlob.reshape(-1)[allIndPos]**=4 # in place power 4
+		#sys.stderr.write('tGlob '+str(tGlob) +'\n' )
+
+		tGrad = simpNoise._grad3[ coordMatrix[allIndPos[0] ] ][:,:,:-1]
+		#tGrad = simpNoise._grad3[ gi.reshape(-1,outputVectorDimension)[allIndPos[0]] ][:,:,:-1]
+		#sys.stderr.write('tGrad '+str(tGrad) +'\n' )
+		
+		tPos = tGlob.reshape(-1)[allIndPos[0]]
+		#GtPos = np.array( [tPos, tPos, tPos, tPos] ).T
+		GtPos = np.tile(tPos, (outputVectorDimension,1) ).T
+
+		# Noise contributions from the three corners
+		contribG = np.zeros( (3*numValues,outputVectorDimension), np.float )
+
+		contribG[allIndPos[0]] = GtPos* (tGrad*Gcoord.reshape(-1,outputVectorDimension,2)[allIndPos[0]]).sum(-1)
+		contribG = contribG.reshape(3,numValues,-1).transpose(1,2,0)
+
+		return 70.0*(contribG.sum(-1))
 	
 	def in2D_outVect( self, noiseCoords ):
 		# Noise contributions from the three corners
@@ -207,14 +269,6 @@ class simpNoise():
 		#permMatrix = np.array( [self.permX, self.permY,self.permZ ] )
 
 	 	#sys.stderr.write('ii'+str(ii) +'\n' )
-	 	coordMatrix = np.tile( ii, (3,3,1) )
-	 	coordMatrix[:,1] += ij12[:,0]
-	 	coordMatrix[:,2] += 1
-		
-		coordMatrix[0] += self.permX[jj]
-		coordMatrix[1] += self.permY[jj+ij12[:,1]]
-		coordMatrix[2] += self.permZ[jj+1]
-
 		#coordMatrix.transpose( (1,0))  += permMatrix[ jj, jj+ ij12[:,1], jj+1 ]
 	 	#sys.stderr.write('coordMatrix'+str(coordMatrix) +'\n' )
 
@@ -225,17 +279,17 @@ class simpNoise():
 	 	#sys.stderr.write('testCoordY'+str(testCoordY) +'\n' )
 	 	#sys.stderr.write('testCoordZ'+str(testCoordZ) +'\n' )
 
-		gi0 = np.array( [ self.permX[ii+self.permX[jj]], self.permY[ii+self.permY[jj]], self.permZ[ii+self.permZ[jj]] ] ) % 12
+		gi0 = np.array( [ self.perm[0,ii+self.perm[0,jj]], self.perm[1,ii+self.perm[1,jj]], self.perm[2,ii+self.perm[2,jj]] ] ) % 12
 		#sys.stderr.write('gi0'+str(gi0) +'\n' )
 		gi0 = gi0.T
 		#sys.stderr.write('gi0.T'+str(gi0) +'\n' )
 
-		gi1 = np.array( [ self.permX[ii+ij12[:,0]+self.permX[jj+ij12[:,1]]], self.permY[ii+ij12[:,0]+self.permY[jj+ij12[:,1]]], self.permZ[ii+ij12[:,0]+self.permZ[jj+ij12[:,1]]] ] ) % 12
+		gi1 = np.array( [ self.perm[0,ii+ij12[:,0]+self.perm[0,jj+ij12[:,1]]], self.perm[1,ii+ij12[:,0]+self.perm[1,jj+ij12[:,1]]], self.perm[2,ii+ij12[:,0]+self.perm[2,jj+ij12[:,1]]] ] ) % 12
 		#sys.stderr.write('gi1'+str(gi1) +'\n' )
 		gi1 = gi1.T
 		#sys.stderr.write('gi1T'+str(gi1) +'\n' )
 
-		gi2 = np.array( [ self.permX[ii+1+self.permX[jj+1]], self.permY[ii+1+self.permY[jj+1]], self.permZ[ii+1+self.permZ[jj+1]]] ) % 12
+		gi2 = np.array( [ self.perm[0,ii+1+self.perm[0,jj+1]], self.perm[1,ii+1+self.perm[1,jj+1]], self.perm[2,ii+1+self.perm[2,jj+1]]] ) % 12
 		gi2 = gi2.T
 
 		# Calculate the contribution from the three corners
@@ -265,6 +319,7 @@ class simpNoise():
 		t = (simpNoise._grad3[ gi2[indPos] ])[:,:,:-1]
 		contrib[indPos,:,2] = Gt2Pos* (t*Gcoord22[indPos]).sum(-1)
 		#sys.stderr.write('contrib3 '+str( contrib[indPos,:,2]  ) +'\n' )
+		sys.stderr.write('Reference contrib '+str( contrib  ) +'\n' )
 
 		return 70.0*(contrib.sum(-1))
 
@@ -311,9 +366,9 @@ class simpNoise():
 	    # Work out the hashed gradient indices of the three simplex corners
 	    ii = int(i) & 255
 	    jj = int(j) & 255
-	    gi0 = self.permW[ii+self.permW[jj]] % 12
-	    gi1 = self.permW[ii+i1+self.permW[jj+j1]] % 12
-	    gi2 = self.permW[ii+1+self.permW[jj+1]] % 12
+	    gi0 = self.perm[3,ii+self.perm[3,jj]] % 12
+	    gi1 = self.perm[3,ii+i1+self.perm[3,jj+j1]] % 12
+	    gi2 = self.perm[3,ii+1+self.perm[3,jj+1]] % 12
 
 
 	    # Calculate the contribution from the three corners
@@ -393,17 +448,17 @@ class simpNoise():
 		gi0 = [0]*3
 		gi1 = [0]*3
 		gi2 = [0]*3
-		gi0[0] = self.permX[ii+self.permX[jj]] % 12
-		gi1[0] = self.permX[ii+i1+self.permX[jj+j1]] % 12
-		gi2[0] = self.permX[ii+1+self.permX[jj+1]] % 12
+		gi0[0] = self.perm[0,ii+self.perm[0,jj]] % 12
+		gi1[0] = self.perm[0,ii+i1+self.perm[0,jj+j1]] % 12
+		gi2[0] = self.perm[0,ii+1+self.perm[0,jj+1]] % 12
 
-		gi0[1] = self.permY[ii+self.permY[jj]] % 12
-		gi1[1] = self.permY[ii+i1+self.permY[jj+j1]] % 12
-		gi2[1] = self.permY[ii+1+self.permY[jj+1]] % 12
+		gi0[1] = self.perm[1,ii+self.perm[1,jj]] % 12
+		gi1[1] = self.perm[1,ii+i1+self.perm[1,jj+j1]] % 12
+		gi2[1] = self.perm[1,ii+1+self.perm[1,jj+1]] % 12
 
-		gi0[2] = self.permZ[ii+self.permZ[jj]] % 12
-		gi1[2] = self.permZ[ii+i1+self.permZ[jj+j1]] % 12
-		gi2[2] = self.permZ[ii+1+self.permZ[jj+1]] % 12
+		gi0[2] = self.perm[2,ii+self.perm[2,jj]] % 12
+		gi1[2] = self.perm[2,ii+i1+self.perm[2,jj+j1]] % 12
+		gi2[2] = self.perm[2,ii+1+self.perm[2,jj+1]] % 12
 
 		# Calculate the contribution from the three corners
 		t0 = 0.5 - x0*x0 - y0*y0
@@ -470,19 +525,18 @@ class nRand():
 	def npaRandEpsilon( self, min, max, N, epsilon=0.00001):
 		return self.nprndState.uniform(min+epsilon,max-epsilon,N)
 
-	def npaRandSphereElevation( self, aElevation, aAmplitude, N ):
-		sphPoints = np.empty( (N,3), np.float32 )
-		phi = self.nprndState.uniform(0.0,2.0*np.pi,N)
-		theta = np.arccos( np.clip( aAmplitude*self.nprndState.uniform( -1.0, 1.0, N ) -2.0*aElevation + 1.0, -1.0,1.0 ))
-		sphPoints[:,0] = sphPoints[:,1] = np.sin( theta )
-		sphPoints[:,2] =  np.cos( theta )
-		sphPoints[:,0] *= np.cos( phi )
-		sphPoints[:,1] *= np.sin( phi )
-		return sphPoints
-
+# aAmplitudeRand is modified by this function
 def npaRandSphereElevation( aElevation, aAmplitude, aPhi, aAmplitudeRand,  N ):
 	sphPoints = np.empty( (N,3), np.float32 )
-	theta = np.arccos( np.clip( aAmplitude*aAmplitudeRand - 2.0*aElevation + 1.0, -1.0,1.0 ))
+
+	theta = aAmplitudeRand
+	theta *=aAmplitude
+	theta -= aElevation
+	theta -= aElevation
+	theta += 1
+	np.clip(theta,-1.0,1.0,out=theta)
+	theta = np.arccos(theta)
+
 	sphPoints[:,1] = sphPoints[:,2] = np.sin( theta )
 	sphPoints[:,0] =  np.cos( theta )
 	sphPoints[:,1] *= np.cos( aPhi )
@@ -716,57 +770,34 @@ class lightningBoltProcessor:
 			#sys.stderr.write('branchLength '+str(branchLength)+'\n')
 			noisePos[:,1] = np.linspace(0.0,branchLength*freq,self.maxPoints)
 
-			#timerTemp = avgTimer(1)
-			#timerTemp.start()
-			chaosOffsetArray[i] = simp.in2D_outVect(noisePos)
-			#sys.stderr.write('chaosOffsetArray '+str(chaosOffsetArray[i])+'\n')
+		# primary noise ( perlin simplex output 3D Vector ) (time,branchParam)->(x,y,z)
+			chaosOffsetArray[i] = simp.in2D_outVectDim(noisePos, simp.perm[:-1] )
 
+		# secondary noise ( perlin simplex output amplitude ) (time,branchParam)->w
 			noisePos[:,1] *= self.GLOBALS[eGLOBAL.chaosSecondaryFreqFactor] 
-
-			for j in range(self.maxPoints) :
-				noiSecond = simp.raw_noise_2d( noisePos[j,0], noisePos[j,1] )
-				#sys.stderr.write('noiSecond '+str(noiSecond)+'\n')
-				noiSecond = max( self.GLOBALS[eGLOBAL.secondaryChaosMinClamp], min ( self.GLOBALS[eGLOBAL.secondaryChaosMaxClamp], 0.5*noiSecond + 0.5) )
-				noiSecond = (noiSecond-self.GLOBALS[eGLOBAL.secondaryChaosMinClamp])/( self.GLOBALS[eGLOBAL.secondaryChaosMaxClamp] - self.GLOBALS[eGLOBAL.secondaryChaosMinClamp])
-				#sys.stderr.write('noiSecondClamp '+str(noiSecond)+'\n')
-				noiSecond = noiSecond*( self.GLOBALS[eGLOBAL.secondaryChaosMaxRemap] - self.GLOBALS[eGLOBAL.secondaryChaosMinRemap]) + self.GLOBALS[eGLOBAL.secondaryChaosMinRemap]
-				#sys.stderr.write('noiSecondRemap '+str(noiSecond)+'\n')				
-				chaosOffsetArray[i,j,:] *= noiSecond
+			ampNoise = simp.in2D_outVectDim(noisePos, simp.perm[3:4] )
+			ampNoise *= .5
+			ampNoise += .5
+			np.clip(ampNoise, self.GLOBALS[eGLOBAL.secondaryChaosMinClamp], self.GLOBALS[eGLOBAL.secondaryChaosMaxClamp], out=ampNoise)
+			ampNoise -= self.GLOBALS[eGLOBAL.secondaryChaosMinClamp]
+			ampNoise *= ( self.GLOBALS[eGLOBAL.secondaryChaosMaxRemap] - self.GLOBALS[eGLOBAL.secondaryChaosMinRemap])/( self.GLOBALS[eGLOBAL.secondaryChaosMaxClamp] - self.GLOBALS[eGLOBAL.secondaryChaosMinClamp])
+			ampNoise += self.GLOBALS[eGLOBAL.secondaryChaosMinRemap]
+			#sys.stderr.write('ampNoise '+str(ampNoise)+'\n')
+			#chaosOffsetArray[i]*=ampNoise
 
 			#sys.stderr.write('chaosOffsetArray '+str(chaosOffsetArray[i])+'\n')
-			'''
-			simp = simpNoise(SPEBRValues[i,eSPEBR.seedChaos])
-			res2 = []
-			leng = []
-			xRes = []
-			for j in range(self.maxPoints) :
-				noi = simp.raw_noise_2dVector( noisePos[j,0], noisePos[j,1] )
-				res2.append ( noi )
-				leng.append( math.sqrt( noi[0]*noi[0] + noi[1]*noi[1] + noi[2]*noi[2] )  )
-				xNoi = simp.raw_noise_2d( float(noisePos[j,0]), float(noisePos[j,1]) )
-				xRes.append( xNoi )
 
-			sys.stderr.write('res2 '+str(res2)+'\n')
-			sys.stderr.write('leng '+str(leng)+'\n')
-			sys.stderr.write('xRes '+str(xRes)+'\n')
-			'''
-
-			#timeTot = timerTemp.stop()
-			#sys.stderr.write('timeTot3D '+str(timeTot)+'\n')
-
-			#timerTemp = avgTimer(1)
-			#sys.stderr.write('seed '+str( SPEBRValues[i,eSPEBR.seedChaos] )+'\n')
+		# Vibration noise (pure random displacement)
 			vibrationsRand.seed( int( SPEBRValues[i,eSPEBR.seedChaos]+ np.floor(GenValues[eGEN.chaosTime]*self.GLOBALS[eGLOBAL.vibrationTimeFactor]) )  )
 			#timerTemp.start()
-			vibrationsArray = vibrationsRand.npaRand(1.0-GenValues[eGEN.chaosVibration], 1.0+GenValues[eGEN.chaosVibration], self.maxPoints)
-			#timeTot = timerTemp.stop()
-			#sys.stderr.write('timeTotVib '+str(timeTot)+'\n')
-			#sys.stderr.write('chaosOffsetArray[i] '+str(chaosOffsetArray[i])+'\n')
-			#sys.stderr.write('vibrationsArray '+str(vibrationsArray)+'\n')
-			chaosOffsetArray[i] *= vibrationsArray.reshape(-1,1)
-			#sys.stderr.write('chaosOffsetArray[i] '+str(chaosOffsetArray[i])+'\n')
+			vibrationsArray = vibrationsRand.npaRand(-GenValues[eGEN.chaosVibration], GenValues[eGEN.chaosVibration], self.maxPoints)
 
-			# childs calculations
+			# add vibration noise to amplitude Noise 
+			ampNoise += vibrationsArray.reshape(-1,1)
+			# multiply the amplitudeNoise to the vector from the 3D vector from the primary noise
+			chaosOffsetArray[i]*=ampNoise
+
+		# childs calculations
 			if not doGenerateChilds:
 				continue
 
@@ -908,7 +939,7 @@ class lightningBoltProcessor:
 			blend -= indexT0
 			blend = blend.reshape(-1,1)
 
-			indexT0 = (float(self.maxPoints-1)* np.clip( APSpeV[indexT0,eAPSPE.childProbability], epsilon,1.0-epsilon )  ).astype(np.uint32)
+			indexT0 = (float(self.maxPoints-1)*APSpeV[indexT0,eAPSPE.childProbability]  ).astype(np.uint32)
 
 		# Get the Along Path Per Generation Values for the elevation and elevationRand for all theses childs
 			#sys.stderr.write('APSpeV elevation '+str(APSpeV[:,eAPSPE.elevation])+'\n')
