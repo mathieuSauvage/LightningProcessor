@@ -10,7 +10,7 @@ pm.loadPlugin('/Users/mathieu/Documents/IMPORTANT/Perso/Prog/python/lightningPro
 lightNode = pm.createNode('lightningbolt')
 meshNode = pm.createNode('mesh')
 pm.connectAttr( 'time1.outTime', lightNode+'.time')
-pm.connectAttr( 'curveShape1.worldSpace[0]', lightNode+'.inputCurve')
+pm.connectAttr( 'curveShape1.worldSpace[0]', lightNode+'.inputCurves[0]')
 pm.connectAttr( lightNode+'.outputMesh', meshNode+'.inMesh')
 
 mrVert = pm.createNode('mentalrayVertexColors')
@@ -42,7 +42,7 @@ class MAH_msCommandException(Exception):
         return self.message
 
 class attDef:
-	def __init__( self, index, mObject, name , shortName, type,  addAttr, isInput  ):
+	def __init__( self, index, mObject, name , shortName, type,  addAttr, isInput, isArray  ):
 		self.mObject = mObject
 		self.index = index
 		self.name = name
@@ -50,6 +50,7 @@ class attDef:
 		self.type = type
 		self.addAttr = addAttr
 		self.isInput = isInput
+		self.isArray = isArray
 
 class computeGroup:
 	def __init__( self, id ):
@@ -100,8 +101,10 @@ class computeGroup:
 		#for attOut in self.OUTS:
 			#sys.stderr.write(" plug out "+attOut.name+" clean "+str(data.isClean( attOut.mObject ))+"\n")
 
-eHlpT = enum('double', 'int', 'bool', 'time', 'curve', 'mesh', 'ramp', 'maxType') 
+eHlpT = enum('double', 'int', 'bool', 'time', 'curve', 'mesh', 'ramp', 'maxType')
 aHlpMayaTypes = [ OpenMaya.MFnNumericData.kDouble, OpenMaya.MFnNumericData.kInt, OpenMaya.MFnNumericData.kBoolean, OpenMaya.MFnUnitAttribute.kTime, OpenMaya.MFnData.kNurbsCurve, OpenMaya.MFnData.kMesh, '' ]
+eHlpDiscBehavior = enum( 'nothing', 'delete', 'reset')
+aHlpMayaDiscBehavior = [ OpenMaya.MFnAttribute.kNothing, OpenMaya.MFnAttribute.kDelete, OpenMaya.MFnAttribute.kReset ]
 
 class MayaAttHelper:	
 	def __init__(self,nodeClass, numComputeGroups):
@@ -117,7 +120,7 @@ class MayaAttHelper:
 		self.attributes = None
 		self.nodeClass = None
 
-	def createAtt( self, name, shortName, type, computeGpIds, isInput=True, default=None, addAttr=True ):
+	def createAtt( self, name, shortName, type, computeGpIds, isInput=True, default=None, addAttr=True, isArray=False, isCached=True, discBehavior=eHlpDiscBehavior.nothing ):
 		attIndex = len(self.attributes)
 		sys.stderr.write('adding attribute '+name+'\n')
 
@@ -152,8 +155,13 @@ class MayaAttHelper:
 		if type != eHlpT.ramp :
 			fn.setKeyable(isInput)
 			fn.setWritable(isInput)
+			fn.setArray(isArray)
+			if isArray and not isInput:
+				raise MAH_msCommandException('Output Array attribute are not supported')
+			fn.setCached(isCached)
+			fn.setDisconnectBehavior( aHlpMayaDiscBehavior[discBehavior] )
 
-		att = attDef(attIndex, mObject, name, shortName, type,  addAttr, isInput )
+		att = attDef(attIndex, mObject, name, shortName, type,  addAttr, isInput,isArray )
 		
 		# find the compute Group or create one
 		computeGrpToUse = None
@@ -228,6 +236,19 @@ class MayaAttHelper:
 				raise MAH_msCommandException('compute group [ '+cpGpDepId+' ] in dependency of '+computeGpId+' does not exist')
 		self.computeGroups[computeGpId].addDependencies( [ self.computeGroups[cpGpId] for cpGpId in computeGpDependencies ] )
 
+	def getArrayDataHdlVal( self, type, arrayDHDL ):
+		if type == eHlpT.double :
+			return arrayDHDL.asDouble()
+		if type == eHlpT.bool :
+			return arrayDHDL.asBool()
+		if type == eHlpT.time :
+			return arrayDHDL.asTime().value()
+		if type == eHlpT.int :
+			return arrayDHDL.asInt()
+		if type == eHlpT.curve :
+			return arrayDHDL.asNurbsCurveTransformed()
+		raise MAH_msCommandException('type not handled in getAttValueOrHdl!')
+
 	def getAttValueOrHdl( self, attId, thisNode, data ):
 		attDef = self.attributes[attId]
 
@@ -240,21 +261,21 @@ class MayaAttHelper:
 			RampPlug01 = OpenMaya.MPlug(RampPlug.node(), RampPlug.attribute())
 			return OpenMaya.MRampAttribute(RampPlug01.node(), RampPlug01.attribute())
 		
-		tempData = data.inputValue(attDef.mObject)
+		tempData = None
+		if attDef.isArray :
+			tempData = data.inputArrayValue(attDef.mObject)
+			elemCount = tempData.elementCount()
+			result = []
+			for idx in range(elemCount) :
+				tempData.jumpToArrayElement(idx)
+				result.append( self.getArrayDataHdlVal( attDef.type, tempData.inputValue() ) )
+			return result
+		else:
+			tempData = data.inputValue(attDef.mObject)
+			return self.getArrayDataHdlVal( attDef.type, tempData)
 
-		if attDef.type == eHlpT.double :
-			return tempData.asDouble()
-		if attDef.type == eHlpT.bool :
-			return tempData.asBool()
-		if attDef.type == eHlpT.time :
-			return tempData.asTime().value()
-		if attDef.type == eHlpT.int :
-			return tempData.asInt()
-		if attDef.type == eHlpT.curve :
-			return tempData.asNurbsCurveTransformed()
 		#if attDef.type is "vectorOfDouble" :
 		#	return OpenMaya.MVector( tempData.asVector() )
-		raise MAH_msCommandException('type not handled in getAttValueOrHdl!')
 
 # class to help having a shorter/cleaner to read access to node's attribute values during the compute function
 class ATTAccessor:
@@ -285,7 +306,7 @@ class ATTAccessor:
 import numpy as np
 import math
 
-kPluginNodeName = "lightningbolt"
+kPluginNodeName = "lightningProcessor"
 kPluginNodeId = OpenMaya.MTypeId(0x8700B)
 
 class MLG_msCommandException(Exception):
@@ -297,8 +318,8 @@ class MLG_msCommandException(Exception):
 
 # Compute groups used by lightning Node
 eCG = enum( 'main', 'detail',
-			'radiusAB', 'childLengthAB', 'intensityAB', 'chaosOffsetAB', 'elevationAB', 'elevationRandAB', 'childProbabilityAB',
-			'chaosOffsetABRoot', 'elevationABRoot', 'elevationRandABRoot', 'radiusABRoot', 'childLengthABRoot', 'intensityABRoot',
+			'radiusAB', 'childLengthAB', 'intensityAB', 'chaosDisplacementAB', 'elevationAB', 'elevationRandAB', 'childProbabilityAB',
+			'chaosDisplacementABRoot', 'elevationABRoot', 'elevationRandABRoot', 'radiusABRoot', 'childLengthABRoot', 'intensityABRoot', 'childProbabilityABRoot',
 			'max' )
 
 # Function used to convert the Processor output into a Maya mesh structure
@@ -374,7 +395,7 @@ def setupABVFromRamp( arrays, ramp, clampValues=None):
 	array, arrayRoot = arrays
 	if array.size <1 :
 		raise MLG_msCommandException('array size must be more than 1')
-	fillArrayFromRampAtt( array, ramp)
+	fillArrayFromRampAtt( array, ramp, clampValues)
 	#sys.stderr.write('array '+str(array)+'\n')
 
 def setupABRootVFromRamp( arrays, ramp, clampValues=None):
@@ -384,7 +405,7 @@ def setupABRootVFromRamp( arrays, ramp, clampValues=None):
 	if ramp is None :
 		arrayRoot[:] = array # COPY Normal -> Root
 		return		
-	fillArrayFromRampAtt( arrayRoot, ramp)
+	fillArrayFromRampAtt( arrayRoot, ramp, clampValues)
 
 
 def getPointListFromCurve( numPoints, fnCurve, lengthScale):
@@ -421,7 +442,7 @@ def getPointListFromCurve( numPoints, fnCurve, lengthScale):
 	return res, lengthScale*fnCurve.length()
 
 
-class lightningBoltNode(OpenMayaMPx.MPxNode):
+class LBProcNode(OpenMayaMPx.MPxNode):
 	#----------------------------------------------------------------------------
 	##AEtemplate proc
 	mel.eval('''
@@ -639,18 +660,18 @@ global proc LGHTAERampControl_Replace (string $nodeAttr)
 	}
 }
 
-global proc AElightningboltTemplate( string $nodeName )
+global proc AElightningProcessorTemplate( string $nodeName )
 {
 	AEswatchDisplay  $nodeName;
 	editorTemplate -beginScrollLayout;
 
 		editorTemplate -beginLayout "System parameters" -collapse 1;
 			editorTemplate -addControl "time";
-			editorTemplate -addControl "tubeSides";
 			editorTemplate -addControl "maxGeneration";
-			editorTemplate -addControl "detail";
 			editorTemplate -addControl "seedChaos";
 			editorTemplate -addControl "seedBranching";
+			editorTemplate -addControl "tubeSides";
+			editorTemplate -addControl "detail";
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Length Attributes ⟧" -collapse 1;
@@ -710,7 +731,7 @@ global proc AElightningboltTemplate( string $nodeName )
 		editorTemplate -endLayout;
 	
 		editorTemplate -beginLayout "⟦ Chaos Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosOffset" "transfertChaosOffset";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosDisplacement" "transfertChaosOffset";
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosFrequency" "transfertChaosFrequency";
 			editorTemplate -addControl "secondaryChaosFreqFactor";
 			editorTemplate -addControl "secondaryChaosMinClamp";
@@ -719,29 +740,29 @@ global proc AElightningboltTemplate( string $nodeName )
 			editorTemplate -addControl "secondaryChaosMaxRemap";
 
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosVibration" "transfertChaosVibration";
-			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosOffsetAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosOffsetRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosOffsetAlongBranchRoot";			
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosDisplacementAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";			
 
-			editorTemplate -s "chaosOffsetRootOverride";
+			editorTemplate -s "chaosDisplacementRootOverride";
 			editorTemplate -s "transfertChaosOffsetRoot";
-			editorTemplate -s "chaosOffsetAlongBranchRoot";
+			editorTemplate -s "chaosDisplacementAlongBranchRoot";
 			editorTemplate -s "transfertChaosFrequencyRoot";
 
-			editorTemplate -s "chaosOffset";
+			editorTemplate -s "chaosDisplacement";
 			editorTemplate -s "transfertChaosOffset";
 			editorTemplate -s "chaosFrequency";
 			editorTemplate -s "transfertChaosFrequency";
 			editorTemplate -s "chaosVibration";
 			editorTemplate -s "transfertChaosVibration";
 
-			editorTemplate -s "chaosOffsetAlongBranch";
+			editorTemplate -s "chaosDisplacementAlongBranch";
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Childs Generation Attributes ⟧" -collapse 1;
 			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildren" "transfertNumChildren";
 			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildrenRand" "transfertNumChildrenRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childProbabilityAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "numChildrenRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "numChildrenRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
 
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationAlongBranch";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationRandAlongBranch";
@@ -929,18 +950,20 @@ global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $att
 	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
 }
 
-global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Children Nums", $overrideAttS );
 	LGHTAELineTransfertAttribute( "numChildren", $attRoot1TrS );
 	LGHTAELineTransfertAttribute( "numChildrenRand", $attRoot2TrS );
+	LGHTAERampControl( $attRootRpS );
 }
 
-global proc LGHTAEOverrideLayoutChildren_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+global proc LGHTAEOverrideLayoutChildren_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
 	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
 	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+	LGHTAERampControl_Replace( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutElevation( string $overrideAttS , string $attRoot1RpS, string $attRoot2RpS )
@@ -960,7 +983,7 @@ global proc LGHTAEOverrideLayoutElevation_Replace( string $overrideAttS , string
 global proc LGHTAEOverrideLayoutChaos( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Chaos", $overrideAttS );
-	LGHTAELineTransfertAttribute( "chaosOffset", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "chaosDisplacement", $attRoot1TrS );
 	LGHTAELineTransfertAttribute( "chaosFrequency", $attRoot2TrS );
 	LGHTAERampControl( $attRoot1RpS );
 }
@@ -981,231 +1004,242 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 
 	#----------------------------------------------------------------------------	
 	# helpers to help manage attributes on a Maya node, all the helpers are "statics" methodes of the node	
-	nhlp = None
+	MHLP = None
 	#----------------------------------------------------------------------------
 
 	def __init__(self):
 		OpenMayaMPx.MPxNode.__init__(self)
-		self.LP = lightningBoltNode.LM.lightningBoltProcessor(mayaLightningMesher) # instance a processor for this node
+		self.LP = LBProcNode.LM.lightningBoltProcessor(mayaLightningMesher) # instance a processor for this node
 
 	def compute(self, plug, data):
 		thisNode = self.thisMObject()
-		acc = ATTAccessor( lightningBoltNode.nhlp, thisNode, data )
+		acc = ATTAccessor( LBProcNode.MHLP, thisNode, data )
 	# -- Compute Detail
 		if acc.needCompute( eCG.detail, plug ):
-			detailValue = acc.get(lightningBoltNode.detailIndex)
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.detail, detailValue ) # ***** initialisation of the sizes of arrays in the Processor (all Along Path arrays depend on detail)
+			detailValue = acc.get(LBProcNode.detailIndex)
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.detail, detailValue ) # ***** initialisation of the sizes of arrays in the Processor (all Along Path arrays depend on detail)
 			acc.setClean(eCG.detail, data)
 	# -- Compute Along Branch Ramp : Radius
 		elif acc.needCompute( eCG.radiusAB, plug ):
-			RadiusABRamp = acc.get(lightningBoltNode.radiusAlongBranchIndex)	
-			setupABVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.radius ), RadiusABRamp )
-			if not acc.get( lightningBoltNode.radiusRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.radius ), None )
+			RadiusABRamp = acc.get(LBProcNode.radiusAlongBranchIndex)	
+			setupABVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.radius ), RadiusABRamp )
+			if not acc.get( LBProcNode.radiusRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.radius ), None )
 			acc.setClean(eCG.radiusAB, data)
 	# -- Compute Along Branch Ramp : Intensity
 		elif acc.needCompute( eCG.intensityAB, plug ):
-			IntensityABRamp = acc.get(lightningBoltNode.intensityAlongPathIndex)	
-			setupABVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.intensity ), IntensityABRamp )
-			if not acc.get( lightningBoltNode.intensityRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.intensity ), None )
+			IntensityABRamp = acc.get(LBProcNode.intensityAlongPathIndex)	
+			setupABVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), IntensityABRamp )
+			if not acc.get( LBProcNode.intensityRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), None )
 			acc.setClean(eCG.intensityAB, data)
 	# -- Compute Along Branch Ramp : Child Length
 		elif acc.needCompute( eCG.childLengthAB, plug ):
-			childLengthABRamp = acc.get(lightningBoltNode.childLengthAlongBranchIndex)	
-			setupABVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.length ), childLengthABRamp )
-			if not acc.get( lightningBoltNode.lengthRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.length ), None )
+			childLengthABRamp = acc.get(LBProcNode.childLengthAlongBranchIndex)	
+			setupABVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.length ), childLengthABRamp )
+			if not acc.get( LBProcNode.lengthRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.length ), None )
 			acc.setClean(eCG.childLengthAB, data)
 	# -- Compute Along Branch Ramp : Chaos Offset
-		elif acc.needCompute( eCG.chaosOffsetAB, plug ):
-			chaosOffsetABRamp = acc.get(lightningBoltNode.chaosOffsetAlongBranchIndex)	
-			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.chaosOffset ), chaosOffsetABRamp )
-			if not acc.get( lightningBoltNode.chaosOffsetRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.chaosOffset ), None )
-			acc.setClean(eCG.chaosOffsetAB, data)
+		elif acc.needCompute( eCG.chaosDisplacementAB, plug ):
+			chaosDisplacementABRamp = acc.get(LBProcNode.chaosDisplacementAlongBranchIndex)	
+			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.chaosDisplacement ), chaosDisplacementABRamp )
+			if not acc.get( LBProcNode.chaosDisplacementRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.chaosDisplacement ), None )
+			acc.setClean(eCG.chaosDisplacementAB, data)
 	# -- Compute Along Branch Ramp : Elevation
 		elif acc.needCompute( eCG.elevationAB, plug ):
-			elevationABRamp = acc.get(lightningBoltNode.elevationAlongBranchIndex)
-			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevation ), elevationABRamp )
-			if not acc.get( lightningBoltNode.elevationRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevation ), None )
+			elevationABRamp = acc.get(LBProcNode.elevationAlongBranchIndex)
+			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevation ), elevationABRamp )
+			if not acc.get( LBProcNode.elevationRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevation ), None )
 			acc.setClean(eCG.elevationAB, data)
 	# -- Compute Along Branch Ramp : Elevation Rand
 		elif acc.needCompute( eCG.elevationRandAB, plug ):
-			elevationRandABRamp = acc.get(lightningBoltNode.elevationRandAlongBranchIndex)	
-			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevationRand ), elevationRandABRamp )
-			if not acc.get( lightningBoltNode.elevationRootOverrideIndex ): # if no Root override then copy
-				setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevationRand ), None )
+			elevationRandABRamp = acc.get(LBProcNode.elevationRandAlongBranchIndex)	
+			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevationRand ), elevationRandABRamp )
+			if not acc.get( LBProcNode.elevationRootOverrideIndex ): # if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevationRand ), None )
 			acc.setClean(eCG.elevationRandAB, data)
 	# -- Compute Along Branch Ramp : Child Probability
 		elif acc.needCompute( eCG.childProbabilityAB, plug ):
-			childProbabilityABRamp = acc.get(lightningBoltNode.childProbabilityAlongBranchIndex)
+			childProbabilityABRamp = acc.get(LBProcNode.childProbabilityAlongBranchIndex)
 			epsilon = 0.00001 # we clamp the values for childProbability, it's important since it remap array indices
-			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), childProbabilityABRamp, (epsilon,1.0-epsilon) )
-			# child probability need a copy of the normal values to the root because there is no override to do it
-			setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), None )
+			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRamp, (epsilon,1.0-epsilon) )
+			if not acc.get( LBProcNode.numChildrenRootOverrideIndex ):# if no Root override then copy
+				setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), None )			
+			#setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), None ) # child probability need a copy of the normal values to the root because there is no override to do it
 			acc.setClean(eCG.childProbabilityAB, data)
 	# -- Compute ROOT Along Branch Ramp : Radius
 		elif acc.needCompute( eCG.radiusABRoot, plug ):
-			radiusABRootRamp = acc.get(lightningBoltNode.radiusAlongBranchRootIndex)	
-			if not acc.get( lightningBoltNode.radiusRootOverrideIndex ):
+			radiusABRootRamp = acc.get(LBProcNode.radiusAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.radiusRootOverrideIndex ):
 				radiusABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
-			setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.radius ), radiusABRootRamp )
+			setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.radius ), radiusABRootRamp )
 			acc.setClean(eCG.radiusABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Child Length
 		elif acc.needCompute( eCG.childLengthABRoot, plug ):
-			childLengthABRootRamp = acc.get(lightningBoltNode.childLengthAlongBranchRootIndex)	
-			if not acc.get( lightningBoltNode.lengthRootOverrideIndex ):
+			childLengthABRootRamp = acc.get(LBProcNode.childLengthAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.lengthRootOverrideIndex ):
 				childLengthABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
-			setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.length ), childLengthABRootRamp )
+			setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.length ), childLengthABRootRamp )
 			acc.setClean(eCG.childLengthABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Intensity
 		elif acc.needCompute( eCG.intensityABRoot, plug ):
-			intensityABRootRamp = acc.get(lightningBoltNode.intensityAlongPathRootIndex)	
-			if not acc.get( lightningBoltNode.intensityRootOverrideIndex ):
+			intensityABRootRamp = acc.get(LBProcNode.intensityAlongPathRootIndex)	
+			if not acc.get( LBProcNode.intensityRootOverrideIndex ):
 				intensityABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
-			setupABRootVFromRamp( self.LP.getAPBR( lightningBoltNode.LM.eAPBR.intensity ), intensityABRootRamp )
+			setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), intensityABRootRamp )
 			acc.setClean(eCG.intensityABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Chaos Offset
-		elif acc.needCompute( eCG.chaosOffsetABRoot, plug ):
-			chaosOffsetABRootRamp = acc.get(lightningBoltNode.chaosOffsetAlongBranchRootIndex)	
-			if not acc.get( lightningBoltNode.chaosOffsetRootOverrideIndex ):
-				chaosOffsetABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
-			setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.chaosOffset ), chaosOffsetABRootRamp )
-			acc.setClean(eCG.chaosOffsetABRoot, data)
+		elif acc.needCompute( eCG.chaosDisplacementABRoot, plug ):
+			chaosDisplacementABRootRamp = acc.get(LBProcNode.chaosDisplacementAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.chaosDisplacementRootOverrideIndex ):
+				chaosDisplacementABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
+			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.chaosDisplacement ), chaosDisplacementABRootRamp )
+			acc.setClean(eCG.chaosDisplacementABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Elevation
 		elif acc.needCompute( eCG.elevationABRoot, plug ):
-			elevationABRootRamp = acc.get(lightningBoltNode.elevationAlongBranchRootIndex)	
-			if not acc.get( lightningBoltNode.elevationRootOverrideIndex ):
+			elevationABRootRamp = acc.get(LBProcNode.elevationAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.elevationRootOverrideIndex ):
 				elevationABRootRamp = None
-			#sys.stderr.write('elevation ramp Root '+str(elevationABRootRamp)+' \n')
-			setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevation ), elevationABRootRamp )
+			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevation ), elevationABRootRamp )
 			acc.setClean(eCG.elevationABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Elevation Rand
 		elif acc.needCompute( eCG.elevationRandABRoot, plug ):
-			elevationRandABRootRamp = acc.get(lightningBoltNode.elevationRandAlongBranchRootIndex)	
-			if not acc.get( lightningBoltNode.elevationRootOverrideIndex ):
+			elevationRandABRootRamp = acc.get(LBProcNode.elevationRandAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.elevationRootOverrideIndex ):
 				elevationRandABRootRamp = None
-			setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.elevationRand ), elevationRandABRootRamp )
+			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.elevationRand ), elevationRandABRootRamp )
 			acc.setClean(eCG.elevationRandABRoot, data)
+	# -- Compute ROOT Along Branch Ramp : Child Probability
+		elif acc.needCompute( eCG.childProbabilityABRoot, plug ):
+			childProbabilityABRootRamp = acc.get(LBProcNode.childProbabilityAlongBranchRootIndex)	
+			if not acc.get( LBProcNode.numChildrenRootOverrideIndex ):
+				childProbabilityABRootRamp = None
+			epsilon = 0.00001 # we clamp the values for childProbability, it's important since it remap array indices
+			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRootRamp, (epsilon,1.0-epsilon) )
+			acc.setClean(eCG.childProbabilityABRoot, data)
+
 	# -- Compute MAIN
 		elif acc.needCompute( eCG.main, plug ):
 		#-------- Read All the attributes from plugs
 			# global values
-			timeValue = acc.get( lightningBoltNode.timeIndex)
-			tubeSidesValue = acc.get( lightningBoltNode.tubeSidesIndex)
-			maxGenerationValue = acc.get( lightningBoltNode.maxGenerationIndex)
-			vibrationTimeFactorValue = acc.get( lightningBoltNode.vibrationTimeFactorIndex)
-			secondaryChaosFreqFactorValue = acc.get( lightningBoltNode.secondaryChaosFreqFactorIndex )
-			secondaryChaosMinClampValue = acc.get( lightningBoltNode.secondaryChaosMinClampIndex )
-			secondaryChaosMaxClampValue = acc.get( lightningBoltNode.secondaryChaosMaxClampIndex )
-			secondaryChaosMinRemapValue = acc.get( lightningBoltNode.secondaryChaosMinRemapIndex )
-			secondaryChaosMaxRemapValue = acc.get( lightningBoltNode.secondaryChaosMaxRemapIndex )
-			seedChaosValue = acc.get( lightningBoltNode.seedChaosIndex)
-			seedBranchingValue = acc.get( lightningBoltNode.seedBranchingIndex)
+			timeValue = acc.get( LBProcNode.timeIndex)
+			tubeSidesValue = acc.get( LBProcNode.tubeSidesIndex)
+			maxGenerationValue = acc.get( LBProcNode.maxGenerationIndex)
+			vibrationTimeFactorValue = acc.get( LBProcNode.vibrationTimeFactorIndex)
+			secondaryChaosFreqFactorValue = acc.get( LBProcNode.secondaryChaosFreqFactorIndex )
+			secondaryChaosMinClampValue = acc.get( LBProcNode.secondaryChaosMinClampIndex )
+			secondaryChaosMaxClampValue = acc.get( LBProcNode.secondaryChaosMaxClampIndex )
+			secondaryChaosMinRemapValue = acc.get( LBProcNode.secondaryChaosMinRemapIndex )
+			secondaryChaosMaxRemapValue = acc.get( LBProcNode.secondaryChaosMaxRemapIndex )
+			seedChaosValue = acc.get( LBProcNode.seedChaosIndex)
+			seedBranchingValue = acc.get( LBProcNode.seedBranchingIndex)
 
 			# Along Branch dependent values
-			radiusValue = acc.get( lightningBoltNode.radiusIndex)
-			intensityValue = acc.get( lightningBoltNode.intensityIndex)
-			childLengthValue = acc.get( lightningBoltNode.lengthIndex)
+			radiusValue = acc.get( LBProcNode.radiusIndex)
+			intensityValue = acc.get( LBProcNode.intensityIndex)
+			childLengthValue = acc.get( LBProcNode.lengthIndex)
 
 			# Generation dependent values
-			chaosFrequencyValue = acc.get( lightningBoltNode.chaosFrequencyIndex)
-			chaosVibrationValue = acc.get( lightningBoltNode.chaosVibrationIndex)
-			numChildrenValue = acc.get( lightningBoltNode.numChildrenIndex)
-			numChildrenRandValue = acc.get( lightningBoltNode.numChildrenRandIndex)
-			timeChaosValue = acc.get( lightningBoltNode.timeChaosIndex)
-			timeBranchingValue = acc.get( lightningBoltNode.timeBranchingIndex)
-			chaosOffsetMultValue = acc.get( lightningBoltNode.chaosOffsetIndex)
-			lengthRandValue = acc.get( lightningBoltNode.lengthRandIndex)
+			chaosFrequencyValue = acc.get( LBProcNode.chaosFrequencyIndex)
+			chaosVibrationValue = acc.get( LBProcNode.chaosVibrationIndex)
+			numChildrenValue = acc.get( LBProcNode.numChildrenIndex)
+			numChildrenRandValue = acc.get( LBProcNode.numChildrenRandIndex)
+			timeChaosValue = acc.get( LBProcNode.timeChaosIndex)
+			timeBranchingValue = acc.get( LBProcNode.timeBranchingIndex)
+			chaosDisplacementMultValue = acc.get( LBProcNode.chaosDisplacementIndex)
+			lengthRandValue = acc.get( LBProcNode.lengthRandIndex)
 			
 			# Transfert of Along Branch dependent values
-			transfertRadiusValue = acc.get( lightningBoltNode.transfertRadiusIndex)
-			transfertChildLengthValue = acc.get( lightningBoltNode.transfertLengthIndex)
-			transfertIntensityValue = acc.get( lightningBoltNode.transfertIntensityIndex)
+			transfertRadiusValue = acc.get( LBProcNode.transfertRadiusIndex)
+			transfertChildLengthValue = acc.get( LBProcNode.transfertLengthIndex)
+			transfertIntensityValue = acc.get( LBProcNode.transfertIntensityIndex)
 
 			# Transfert of Generation dependent values
-			transfertChaosOffsetValue = acc.get( lightningBoltNode.transfertChaosOffsetIndex)
-			transfertTimeBranchingValue = acc.get( lightningBoltNode.transfertTimeBranchingIndex)
-			transfertTimeChaosValue = acc.get( lightningBoltNode.transfertTimeChaosIndex)
-			transfertNumChildrenValue = acc.get( lightningBoltNode.transfertNumChildrenIndex)
-			transfertNumChildrenRandValue = acc.get( lightningBoltNode.transfertNumChildrenRandIndex)
-			transfertChaosFrequencyValue = acc.get( lightningBoltNode.transfertChaosFrequencyIndex)
-			transfertChaosVibrationValue = acc.get( lightningBoltNode.transfertChaosVibrationIndex)
-			transfertLengthRandValue = acc.get( lightningBoltNode.transfertLengthRandIndex)
+			transfertChaosOffsetValue = acc.get( LBProcNode.transfertChaosOffsetIndex)
+			transfertTimeBranchingValue = acc.get( LBProcNode.transfertTimeBranchingIndex)
+			transfertTimeChaosValue = acc.get( LBProcNode.transfertTimeChaosIndex)
+			transfertNumChildrenValue = acc.get( LBProcNode.transfertNumChildrenIndex)
+			transfertNumChildrenRandValue = acc.get( LBProcNode.transfertNumChildrenRandIndex)
+			transfertChaosFrequencyValue = acc.get( LBProcNode.transfertChaosFrequencyIndex)
+			transfertChaosVibrationValue = acc.get( LBProcNode.transfertChaosVibrationIndex)
+			transfertLengthRandValue = acc.get( LBProcNode.transfertLengthRandIndex)
 
 			# And the Root overrides that are not Ramp
 			# Radius
-			transfertRadiusRootValue = acc.getIf( lightningBoltNode.radiusRootOverrideIndex, lightningBoltNode.transfertRadiusRootIndex )
+			transfertRadiusRootValue = acc.getIf( LBProcNode.radiusRootOverrideIndex, LBProcNode.transfertRadiusRootIndex )
 			# Childlength
-			transfertChildLengthRootValue = acc.getIf( lightningBoltNode.lengthRootOverrideIndex, lightningBoltNode.transfertLengthRootIndex )
+			transfertChildLengthRootValue = acc.getIf( LBProcNode.lengthRootOverrideIndex, LBProcNode.transfertLengthRootIndex )
 			# Intensity
-			transfertIntensityRootValue = acc.getIf( lightningBoltNode.intensityRootOverrideIndex, lightningBoltNode.transfertIntensityRootIndex )
+			transfertIntensityRootValue = acc.getIf( LBProcNode.intensityRootOverrideIndex, LBProcNode.transfertIntensityRootIndex )
 			# Times
-			transfertTimeChaosRootValue = acc.getIf( lightningBoltNode.timeRootOverrideIndex, lightningBoltNode.transfertTimeChaosRootIndex )
-			transfertTimeBranchingRootValue = acc.getIf( lightningBoltNode.timeRootOverrideIndex, lightningBoltNode.transfertTimeBranchingRootIndex )
+			transfertTimeChaosRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertTimeChaosRootIndex )
+			transfertTimeBranchingRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertTimeBranchingRootIndex )
 			# Chaos
-			transfertChaosOffsetRootValue = acc.getIf( lightningBoltNode.chaosOffsetRootOverrideIndex, lightningBoltNode.transfertChaosOffsetRootIndex )
-			transfertChaosFrequencyRootValue = acc.getIf( lightningBoltNode.chaosOffsetRootOverrideIndex, lightningBoltNode.transfertChaosFrequencyRootIndex )
+			transfertChaosOffsetRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosOffsetRootIndex )
+			transfertChaosFrequencyRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosFrequencyRootIndex )
 			# num Children
-			transfertNumChildrenRootValue = acc.getIf( lightningBoltNode.numChildrenRootOverrideIndex, lightningBoltNode.transfertNumChildrenRootIndex )
-			transfertNumChildrenRandRootValue = acc.getIf( lightningBoltNode.numChildrenRootOverrideIndex, lightningBoltNode.transfertNumChildrenRandRootIndex )
+			transfertNumChildrenRootValue = acc.getIf( LBProcNode.numChildrenRootOverrideIndex, LBProcNode.transfertNumChildrenRootIndex )
+			transfertNumChildrenRandRootValue = acc.getIf( LBProcNode.numChildrenRootOverrideIndex, LBProcNode.transfertNumChildrenRandRootIndex )
 
-			tempCurve = acc.get(lightningBoltNode.inputCurveIndex)
-			if tempCurve.isNull():
-				sys.stderr.write('the lightninbolt node need at least one curve!\n')
+			tempCurves = acc.get(LBProcNode.inputCurvesIndex)
+			if tempCurves == []:
+				sys.stderr.write('lightninbolt has no curve to compute!\n')
 				return
-			fnNurbs = OpenMaya.MFnNurbsCurve( tempCurve )
-			pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs, childLengthValue )
-
-			outputHandle = acc.get(lightningBoltNode.outputMeshIndex)
+			
+			outputHandle = acc.get(LBProcNode.outputMeshIndex)
 
 		#-------- END collect attributes from the node, now send everything to the lightning processor
 			# load the list of points from the curve into the processor
-			self.LP.addSeedPointList(pointList)
+			for c in tempCurves:
+				fnNurbs = OpenMaya.MFnNurbsCurve( c )
+				pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs, childLengthValue )
+				# load the list of points from the curve into the processor
+				self.LP.addSeedPointList(pointList)
 
 			# global values
 			
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.time, timeValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.maxGeneration, maxGenerationValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.tubeSide, tubeSidesValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.vibrationTimeFactor, vibrationTimeFactorValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.seedChaos, seedChaosValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.seedBranching, seedBranchingValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.chaosSecondaryFreqFactor, secondaryChaosFreqFactorValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMinClamp, secondaryChaosMinClampValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMaxClamp, secondaryChaosMaxClampValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMinRemap, secondaryChaosMinRemapValue )
-			self.LP.setGlobalValue( lightningBoltNode.LM.eGLOBAL.secondaryChaosMaxRemap, secondaryChaosMaxRemapValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.time, timeValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.maxGeneration, maxGenerationValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.tubeSide, tubeSidesValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.vibrationTimeFactor, vibrationTimeFactorValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedChaos, seedChaosValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedBranching, seedBranchingValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.chaosSecondaryFreqFactor, secondaryChaosFreqFactorValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMinClamp, secondaryChaosMinClampValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMaxClamp, secondaryChaosMaxClampValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMinRemap, secondaryChaosMinRemapValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMaxRemap, secondaryChaosMaxRemapValue )
 
 			# load the Along Path Values inputs of the node into the processor			
-			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.radius, radiusValue )
-			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.intensity, intensityValue )
-			self.LP.setAPVFactors( lightningBoltNode.LM.eAPBR.length, cvLength )
+			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.radius, radiusValue )
+			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.intensity, intensityValue )
+			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.length, cvLength )
 			# the corresponding transfert values
-			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.radius, transfertRadiusValue, transfertRadiusRootValue )
-			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.intensity, transfertIntensityValue, transfertIntensityRootValue )
-			self.LP.setAPVTransfert( lightningBoltNode.LM.eAPBR.length, transfertChildLengthValue, transfertChildLengthRootValue )
+			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.radius, transfertRadiusValue, transfertRadiusRootValue )
+			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.intensity, transfertIntensityValue, transfertIntensityRootValue )
+			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.length, transfertChildLengthValue, transfertChildLengthRootValue )
 
 			# load the Generation inputs
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosFrequency, chaosFrequencyValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosVibration, chaosVibrationValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosTime, timeChaosValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.branchingTime, timeBranchingValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.numChildren, numChildrenValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.numChildrenRand, numChildrenRandValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.chaosOffset, chaosOffsetMultValue )
-			self.LP.setGENValue( lightningBoltNode.LM.eGEN.lengthRand, lengthRandValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosFrequency, chaosFrequencyValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosVibration, chaosVibrationValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosTime, timeChaosValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.branchingTime, timeBranchingValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.numChildren, numChildrenValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.numChildrenRand, numChildrenRandValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosDisplacement, chaosDisplacementMultValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.lengthRand, lengthRandValue )
 			# the corresponding transfert values
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.branchingTime, transfertTimeBranchingValue, transfertTimeBranchingRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosTime, transfertTimeChaosValue, transfertTimeChaosRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosOffset, transfertChaosOffsetValue, transfertChaosOffsetRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.numChildren, transfertNumChildrenValue, transfertNumChildrenRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.numChildrenRand, transfertNumChildrenRandValue, transfertNumChildrenRandRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosFrequency, transfertChaosFrequencyValue, transfertChaosFrequencyRootValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.chaosVibration, transfertChaosVibrationValue )
-			self.LP.setGENTransfert( lightningBoltNode.LM.eGEN.lengthRand, transfertLengthRandValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.branchingTime, transfertTimeBranchingValue, transfertTimeBranchingRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosTime, transfertTimeChaosValue, transfertTimeChaosRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosDisplacement, transfertChaosOffsetValue, transfertChaosOffsetRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.numChildren, transfertNumChildrenValue, transfertNumChildrenRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.numChildrenRand, transfertNumChildrenRandValue, transfertNumChildrenRandRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosFrequency, transfertChaosFrequencyValue, transfertChaosFrequencyRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosVibration, transfertChaosVibrationValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.lengthRand, transfertLengthRandValue )
 					
 			outputData = self.LP.process()
 			
@@ -1229,147 +1263,152 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 	def postConstructor(self):
 		# setting the Ramp initial value because it cannot be done in the AETemplate
 		# thanks to this blog for the idea : http://www.chadvernon.com/blog/resources/maya-api-programming/mrampattribute/		
-		self.postConstructorRampInitialize( lightningBoltNode.radiusAlongBranch, [(0,1),(1,0)] )
-		self.postConstructorRampInitialize( lightningBoltNode.radiusAlongBranchRoot, [(0,1),(1,0.5)] )
-		self.postConstructorRampInitialize( lightningBoltNode.chaosOffsetAlongBranch, [(0,0),(.05,1)] )
-		self.postConstructorRampInitialize( lightningBoltNode.chaosOffsetAlongBranchRoot, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( LBProcNode.radiusAlongBranch, [(0,1),(1,0)] )
+		self.postConstructorRampInitialize( LBProcNode.radiusAlongBranchRoot, [(0,1),(1,0.5)] )
+		self.postConstructorRampInitialize( LBProcNode.childLengthAlongBranch, [(0,1),(1,.25)] )
+		self.postConstructorRampInitialize( LBProcNode.childLengthAlongBranchRoot, [(0,1),(1,.25)] )
+		self.postConstructorRampInitialize( LBProcNode.intensityAlongPath, [(0,1),(.15,0.8)] )
+		self.postConstructorRampInitialize( LBProcNode.intensityAlongPathRoot, [(0,1),(1,0.85)] )
 
-		self.postConstructorRampInitialize( lightningBoltNode.childLengthAlongBranch, [(0,1),(1,.25)] )
-		self.postConstructorRampInitialize( lightningBoltNode.childLengthAlongBranchRoot, [(0,1),(1,.25)] )
-		self.postConstructorRampInitialize( lightningBoltNode.intensityAlongPath, [(0,1),(.15,0.8)] )
-		self.postConstructorRampInitialize( lightningBoltNode.intensityAlongPathRoot, [(0,1),(1,0.85)] )
-
-		self.postConstructorRampInitialize( lightningBoltNode.elevationAlongBranch, [(0,0.12),(1,0)] )
-		self.postConstructorRampInitialize( lightningBoltNode.elevationRandAlongBranch, [(0,0.12),(0,0.3)] )
-		self.postConstructorRampInitialize( lightningBoltNode.childProbabilityAlongBranch, [(0,0),(1,1)] )
+		self.postConstructorRampInitialize( LBProcNode.chaosDisplacementAlongBranch, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( LBProcNode.chaosDisplacementAlongBranchRoot, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( LBProcNode.elevationAlongBranch, [(0,0.12),(1,0)] )
+		self.postConstructorRampInitialize( LBProcNode.elevationAlongBranchRoot, [(0,0.12),(1,0)] )
+		self.postConstructorRampInitialize( LBProcNode.elevationRandAlongBranch, [(0,0.12),(0,0.3)] )
+		self.postConstructorRampInitialize( LBProcNode.elevationRandAlongBranchRoot, [(0,0.12),(0,0.3)] )
+		self.postConstructorRampInitialize( LBProcNode.childProbabilityAlongBranch, [(0,0),(1,1)] )
+		self.postConstructorRampInitialize( LBProcNode.childProbabilityAlongBranchRoot, [(0,0),(1,1)] )
 		
 
 def nodeCreator():
-	return OpenMayaMPx.asMPxPtr( lightningBoltNode() )
+	return OpenMayaMPx.asMPxPtr( LBProcNode() )
 
 def nodeInitializer():
-	lightningBoltNode.nhlp = MayaAttHelper(lightningBoltNode, eCG.max )
+	LBProcNode.MHLP = MayaAttHelper(LBProcNode, eCG.max )
 
-	lightningBoltNode.nhlp.createAtt( 'inputCurve', 'ic', eHlpT.curve, eCG.main )
+	LBProcNode.MHLP.createAtt( 'inputCurves', 'ic', eHlpT.curve, eCG.main, isArray=True, isCached=True, discBehavior=eHlpDiscBehavior.delete )
 
 # Global Values
-	lightningBoltNode.nhlp.createAtt( 'detail', 'det', eHlpT.int, eCG.detail, default=6 )
+	LBProcNode.MHLP.createAtt( 'detail', 'det', eHlpT.int, eCG.detail, default=6 )
 
-	lightningBoltNode.nhlp.createAtt( 'time', 't', eHlpT.time, eCG.main, default=0.0 )
-	lightningBoltNode.nhlp.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.main, default=4 )
-	lightningBoltNode.nhlp.createAtt( 'maxGeneration', 'mg', eHlpT.int, eCG.main, default=3 )
-	lightningBoltNode.nhlp.createAtt( 'seedChaos', 'sc', eHlpT.int, eCG.main, default=0 )
-	lightningBoltNode.nhlp.createAtt( 'seedBranching', 'sb', eHlpT.int, eCG.main, default=0 )
-	lightningBoltNode.nhlp.createAtt( 'vibrationTimeFactor', 'vtf', eHlpT.double, eCG.main, default=150.0 )
-	lightningBoltNode.nhlp.createAtt( 'secondaryChaosFreqFactor', 'scff', eHlpT.double, eCG.main, default=4.5 )
-	lightningBoltNode.nhlp.createAtt( 'secondaryChaosMinClamp', 'scmnc', eHlpT.double, eCG.main, default=.25 )
-	lightningBoltNode.nhlp.createAtt( 'secondaryChaosMaxClamp', 'scmxc', eHlpT.double, eCG.main, default=0.75 )
-	lightningBoltNode.nhlp.createAtt( 'secondaryChaosMinRemap', 'scmnr', eHlpT.double, eCG.main, default=0.6 )
-	lightningBoltNode.nhlp.createAtt( 'secondaryChaosMaxRemap', 'scmxr', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'time', 't', eHlpT.time, eCG.main, default=0.0 )
+	LBProcNode.MHLP.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.main, default=4 )
+	LBProcNode.MHLP.createAtt( 'maxGeneration', 'mg', eHlpT.int, eCG.main, default=3 )
+	LBProcNode.MHLP.createAtt( 'seedChaos', 'sc', eHlpT.int, eCG.main, default=0 )
+	LBProcNode.MHLP.createAtt( 'seedBranching', 'sb', eHlpT.int, eCG.main, default=0 )
+	LBProcNode.MHLP.createAtt( 'vibrationTimeFactor', 'vtf', eHlpT.double, eCG.main, default=150.0 )
+	LBProcNode.MHLP.createAtt( 'secondaryChaosFreqFactor', 'scff', eHlpT.double, eCG.main, default=4.5 )
+	LBProcNode.MHLP.createAtt( 'secondaryChaosMinClamp', 'scmnc', eHlpT.double, eCG.main, default=.25 )
+	LBProcNode.MHLP.createAtt( 'secondaryChaosMaxClamp', 'scmxc', eHlpT.double, eCG.main, default=0.75 )
+	LBProcNode.MHLP.createAtt( 'secondaryChaosMinRemap', 'scmnr', eHlpT.double, eCG.main, default=0.6 )
+	LBProcNode.MHLP.createAtt( 'secondaryChaosMaxRemap', 'scmxr', eHlpT.double, eCG.main, default=1.0 )
 
 # Generation Values
-	lightningBoltNode.nhlp.createAtt( 'timeChaos', 'tc', eHlpT.double, eCG.main, default=8.0 )
-	lightningBoltNode.nhlp.createAtt( 'timeBranching', 'tb', eHlpT.double, eCG.main, default=6.5 )
-	lightningBoltNode.nhlp.createAtt( 'chaosFrequency', 'cf', eHlpT.double, eCG.main, default=0.15 )
-	lightningBoltNode.nhlp.createAtt( 'chaosVibration', 'cv', eHlpT.double, eCG.main, default=0.15 )
-	lightningBoltNode.nhlp.createAtt( 'numChildren', 'nc', eHlpT.int, eCG.main, default=1 )
-	lightningBoltNode.nhlp.createAtt( 'numChildrenRand', 'ncr', eHlpT.int, eCG.main, default=3 )
-	lightningBoltNode.nhlp.createAtt( 'chaosOffset', 'co', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'lengthRand', 'lr', eHlpT.double, eCG.main, default=0.5 )
+	LBProcNode.MHLP.createAtt( 'timeChaos', 'tc', eHlpT.double, eCG.main, default=8.0 )
+	LBProcNode.MHLP.createAtt( 'timeBranching', 'tb', eHlpT.double, eCG.main, default=6.5 )
+	LBProcNode.MHLP.createAtt( 'chaosFrequency', 'cf', eHlpT.double, eCG.main, default=0.15 )
+	LBProcNode.MHLP.createAtt( 'chaosVibration', 'cv', eHlpT.double, eCG.main, default=0.15 )
+	LBProcNode.MHLP.createAtt( 'numChildren', 'nc', eHlpT.int, eCG.main, default=1 )
+	LBProcNode.MHLP.createAtt( 'numChildrenRand', 'ncr', eHlpT.int, eCG.main, default=3 )
+	LBProcNode.MHLP.createAtt( 'chaosDisplacement', 'cd', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'lengthRand', 'lr', eHlpT.double, eCG.main, default=0.5 )
 
 	# Generation Transfert Factors
-	lightningBoltNode.nhlp.createAtt( 'transfertTimeBranching', 'ttb', eHlpT.double, eCG.main, default=3.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertTimeChaos', 'ttc', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertChaosFrequency', 'tcf', eHlpT.double, eCG.main, default=2.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertChaosVibration', 'tcv', eHlpT.double, eCG.main, default=.6 )
-	lightningBoltNode.nhlp.createAtt( 'transfertNumChildren', 'tnc', eHlpT.double, eCG.main, default=0.5 )
-	lightningBoltNode.nhlp.createAtt( 'transfertNumChildrenRand', 'tncr', eHlpT.double, eCG.main, default=0.75 )
-	lightningBoltNode.nhlp.createAtt( 'transfertChaosOffset', 'tco', eHlpT.double, eCG.main, default=0.6 )
-	lightningBoltNode.nhlp.createAtt( 'transfertLengthRand', 'tlr', eHlpT.double, eCG.main, default=1.5 )
+	LBProcNode.MHLP.createAtt( 'transfertTimeBranching', 'ttb', eHlpT.double, eCG.main, default=3.0 )
+	LBProcNode.MHLP.createAtt( 'transfertTimeChaos', 'ttc', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosFrequency', 'tcf', eHlpT.double, eCG.main, default=2.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosVibration', 'tcv', eHlpT.double, eCG.main, default=.6 )
+	LBProcNode.MHLP.createAtt( 'transfertNumChildren', 'tnc', eHlpT.double, eCG.main, default=0.5 )
+	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRand', 'tncr', eHlpT.double, eCG.main, default=0.75 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosOffset', 'tco', eHlpT.double, eCG.main, default=0.6 )
+	LBProcNode.MHLP.createAtt( 'transfertLengthRand', 'tlr', eHlpT.double, eCG.main, default=1.5 )
 
 # APV Branches
-	lightningBoltNode.nhlp.createAtt( 'radiusAlongBranch', 'rab', eHlpT.ramp, eCG.radiusAB )
-	lightningBoltNode.nhlp.createAtt( 'radius', 'r', eHlpT.double, eCG.main, default=.15 )
-	lightningBoltNode.nhlp.createAtt( 'childLengthAlongBranch', 'clab', eHlpT.ramp, eCG.childLengthAB )
-	lightningBoltNode.nhlp.createAtt( 'length', 'l', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'intensityAlongPath', 'ir', eHlpT.ramp, eCG.intensityAB )
-	lightningBoltNode.nhlp.createAtt( 'intensity', 'i', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'radiusAlongBranch', 'rab', eHlpT.ramp, eCG.radiusAB )
+	LBProcNode.MHLP.createAtt( 'radius', 'r', eHlpT.double, eCG.main, default=.15 )
+	LBProcNode.MHLP.createAtt( 'childLengthAlongBranch', 'clab', eHlpT.ramp, eCG.childLengthAB )
+	LBProcNode.MHLP.createAtt( 'length', 'l', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'intensityAlongPath', 'ir', eHlpT.ramp, eCG.intensityAB )
+	LBProcNode.MHLP.createAtt( 'intensity', 'i', eHlpT.double, eCG.main, default=1.0 )
 
 	# APV Branches Transfert Factors
-	lightningBoltNode.nhlp.createAtt( 'transfertRadius', 'tr', eHlpT.double, eCG.main, default=0.8 )
-	lightningBoltNode.nhlp.createAtt( 'transfertLength', 'tl', eHlpT.double, eCG.main, default=0.6 )
-	lightningBoltNode.nhlp.createAtt( 'transfertIntensity', 'ti', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertRadius', 'tr', eHlpT.double, eCG.main, default=0.8 )
+	LBProcNode.MHLP.createAtt( 'transfertLength', 'tl', eHlpT.double, eCG.main, default=0.6 )
+	LBProcNode.MHLP.createAtt( 'transfertIntensity', 'ti', eHlpT.double, eCG.main, default=1.0 )
 
 # APV Specials
-	lightningBoltNode.nhlp.createAtt( 'chaosOffsetAlongBranch', 'coab', eHlpT.ramp, eCG.chaosOffsetAB )
+	LBProcNode.MHLP.createAtt( 'chaosDisplacementAlongBranch', 'cdab', eHlpT.ramp, eCG.chaosDisplacementAB )
 
 	# elevation 1 = 180 degree
-	lightningBoltNode.nhlp.createAtt( 'elevationAlongBranch', 'eab', eHlpT.ramp, eCG.elevationAB )
-	lightningBoltNode.nhlp.createAtt( 'elevationRandAlongBranch', 'erab', eHlpT.ramp, eCG.elevationRandAB )
-	lightningBoltNode.nhlp.createAtt( 'childProbabilityAlongBranch', 'cpab', eHlpT.ramp, eCG.childProbabilityAB )
+	LBProcNode.MHLP.createAtt( 'elevationAlongBranch', 'eab', eHlpT.ramp, eCG.elevationAB )
+	LBProcNode.MHLP.createAtt( 'elevationRandAlongBranch', 'erab', eHlpT.ramp, eCG.elevationRandAB )
+
+	LBProcNode.MHLP.createAtt( 'childProbabilityAlongBranch', 'cpab', eHlpT.ramp, eCG.childProbabilityAB )
 
 # Root Overrides
 	# Generation Transfert Overrides
-	lightningBoltNode.nhlp.createAtt( 'timeRootOverride', 'tro', eHlpT.bool, eCG.main, default=False )
-	lightningBoltNode.nhlp.createAtt( 'transfertTimeChaosRoot', 'ttsrt', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertTimeBranchingRoot', 'ttbrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'timeRootOverride', 'tro', eHlpT.bool, eCG.main, default=False )
+	LBProcNode.MHLP.createAtt( 'transfertTimeChaosRoot', 'ttsrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertTimeBranchingRoot', 'ttbrt', eHlpT.double, eCG.main, default=1.0 )
 
-	lightningBoltNode.nhlp.createAtt( 'chaosOffsetRootOverride', 'coro', eHlpT.bool, eCG.chaosOffsetABRoot, default=False )
-	lightningBoltNode.nhlp.createAtt( 'chaosOffsetAlongBranchRoot', 'orrt', eHlpT.ramp, eCG.chaosOffsetABRoot )
-	lightningBoltNode.nhlp.createAtt( 'transfertChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'chaosDisplacementRootOverride', 'coro', eHlpT.bool, eCG.chaosDisplacementABRoot, default=False )
+	LBProcNode.MHLP.createAtt( 'chaosDisplacementAlongBranchRoot', 'orrt', eHlpT.ramp, eCG.chaosDisplacementABRoot )
+	LBProcNode.MHLP.createAtt( 'transfertChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=1.0 )
 
-	lightningBoltNode.nhlp.createAtt( 'numChildrenRootOverride', 'ncro', eHlpT.bool, eCG.main, default=0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertNumChildrenRoot', 'tncrt', eHlpT.double, eCG.main, default=1.0 )
-	lightningBoltNode.nhlp.createAtt( 'transfertNumChildrenRandRoot', 'tncrrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'numChildrenRootOverride', 'ncro', eHlpT.bool, eCG.main, default=0 )
+	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRoot', 'tncrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRandRoot', 'tncrrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'childProbabilityAlongBranchRoot', 'cpabr', eHlpT.ramp, eCG.childProbabilityABRoot )
 
 
 	# APV Special overrides
-	lightningBoltNode.nhlp.createAtt( 'elevationRootOverride', 'ero', eHlpT.bool, [eCG.elevationABRoot, eCG.elevationRandABRoot], default=False )
-	lightningBoltNode.nhlp.createAtt( 'elevationAlongBranchRoot', 'errt', eHlpT.ramp, eCG.elevationABRoot )	
-	lightningBoltNode.nhlp.createAtt( 'elevationRandAlongBranchRoot', 'errrt', eHlpT.ramp, eCG.elevationRandABRoot )
+	LBProcNode.MHLP.createAtt( 'elevationRootOverride', 'ero', eHlpT.bool, [eCG.elevationABRoot, eCG.elevationRandABRoot], default=False )
+	LBProcNode.MHLP.createAtt( 'elevationAlongBranchRoot', 'errt', eHlpT.ramp, eCG.elevationABRoot )	
+	LBProcNode.MHLP.createAtt( 'elevationRandAlongBranchRoot', 'errrt', eHlpT.ramp, eCG.elevationRandABRoot )
 
 	# APV Branches overrides
-	lightningBoltNode.nhlp.createAtt( 'radiusRootOverride', 'rro', eHlpT.bool, eCG.radiusABRoot, default=True )
-	lightningBoltNode.nhlp.createAtt( 'radiusAlongBranchRoot', 'rrrt', eHlpT.ramp, eCG.radiusABRoot )
-	lightningBoltNode.nhlp.createAtt( 'transfertRadiusRoot', 'trr', eHlpT.double, eCG.main, default=0.45 )
+	LBProcNode.MHLP.createAtt( 'radiusRootOverride', 'rro', eHlpT.bool, eCG.radiusABRoot, default=True )
+	LBProcNode.MHLP.createAtt( 'radiusAlongBranchRoot', 'rrrt', eHlpT.ramp, eCG.radiusABRoot )
+	LBProcNode.MHLP.createAtt( 'transfertRadiusRoot', 'trr', eHlpT.double, eCG.main, default=0.45 )
 	
-	lightningBoltNode.nhlp.createAtt( 'lengthRootOverride', 'lro', eHlpT.bool, eCG.childLengthABRoot, default=False )
-	lightningBoltNode.nhlp.createAtt( 'childLengthAlongBranchRoot', 'clapr', eHlpT.ramp, eCG.childLengthABRoot )
-	lightningBoltNode.nhlp.createAtt( 'transfertLengthRoot', 'tlro', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'lengthRootOverride', 'lro', eHlpT.bool, eCG.childLengthABRoot, default=False )
+	LBProcNode.MHLP.createAtt( 'childLengthAlongBranchRoot', 'clapr', eHlpT.ramp, eCG.childLengthABRoot )
+	LBProcNode.MHLP.createAtt( 'transfertLengthRoot', 'tlro', eHlpT.double, eCG.main, default=1.0 )
 	
-	lightningBoltNode.nhlp.createAtt( 'intensityRootOverride', 'iro', eHlpT.bool, eCG.intensityABRoot, default=True )
-	lightningBoltNode.nhlp.createAtt( 'intensityAlongPathRoot', 'iapr', eHlpT.ramp, eCG.intensityABRoot )
-	lightningBoltNode.nhlp.createAtt( 'transfertIntensityRoot', 'tir', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'intensityRootOverride', 'iro', eHlpT.bool, eCG.intensityABRoot, default=True )
+	LBProcNode.MHLP.createAtt( 'intensityAlongPathRoot', 'iapr', eHlpT.ramp, eCG.intensityABRoot )
+	LBProcNode.MHLP.createAtt( 'transfertIntensityRoot', 'tir', eHlpT.double, eCG.main, default=1.0 )
 
 # OUTPUTS
-	lightningBoltNode.nhlp.createAtt( 'outputMesh', 'om', eHlpT.mesh, eCG.main, isInput=False )
+	LBProcNode.MHLP.createAtt( 'outputMesh', 'om', eHlpT.mesh, eCG.main, isInput=False )
 
 # Dependencies of some of the Compute Groups
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.radiusAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.childLengthAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.intensityAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.chaosOffsetAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.elevationAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.elevationRandAB, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.childProbabilityAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.radiusAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.childLengthAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.intensityAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.chaosDisplacementAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.elevationAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.elevationRandAB, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.childProbabilityAB, [eCG.detail] )
 	
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.radiusABRoot, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.childLengthABRoot, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.intensityABRoot, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.chaosOffsetABRoot, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.elevationABRoot, [eCG.detail] )
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.elevationRandABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.radiusABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.childLengthABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.intensityABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.chaosDisplacementABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.elevationABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.elevationRandABRoot, [eCG.detail] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.childProbabilityABRoot, [eCG.detail] )
 	
-	lightningBoltNode.nhlp.addGroupDependencies( eCG.main, [ eCG.radiusAB, eCG.childLengthAB, eCG.intensityAB, eCG.chaosOffsetAB, eCG.elevationAB, eCG.elevationRandAB, eCG.childProbabilityAB, eCG.radiusABRoot, eCG.childLengthABRoot, eCG.intensityABRoot, eCG.chaosOffsetABRoot, eCG.elevationABRoot, eCG.elevationRandABRoot ] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.main, [ eCG.radiusAB, eCG.childLengthAB, eCG.intensityAB, eCG.chaosDisplacementAB, eCG.elevationAB, eCG.elevationRandAB, eCG.childProbabilityAB, eCG.radiusABRoot, eCG.childLengthABRoot, eCG.intensityABRoot, eCG.chaosDisplacementABRoot, eCG.elevationABRoot, eCG.elevationRandABRoot, eCG.childProbabilityABRoot ] )
 
 # Adding attributes, generating affects etc...
-	lightningBoltNode.nhlp.finalizeAttributeInitialization()
+	LBProcNode.MHLP.finalizeAttributeInitialization()
 
 def cleanupClass():
-	lightningBoltNode.nhlp.cleanUp()
-	delattr(lightningBoltNode,'LM')
-	delattr(lightningBoltNode,'nhlp')
+	LBProcNode.MHLP.cleanUp()
+	delattr(LBProcNode,'LM')
+	delattr(LBProcNode,'MHLP')
 
 # initialize the script plug-in
 def initializePlugin(mobject):
