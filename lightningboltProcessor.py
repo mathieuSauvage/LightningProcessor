@@ -18,6 +18,7 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
+- implement the time accumulator
 - generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
 ================================================================================
 '''
@@ -55,30 +56,6 @@ class avgTimer:
 		self.arrayOfTime[self.nextIndex] = time.clock() - self.startTime
 		self.nextIndex = (self.nextIndex + 1 ) % len(self.arrayOfTime)
 		return self.average()
-
-def arndSphereVect(N):
-	"""Generate N random points on a unit sphere, equally spaced on the
-	surface of the sphere, and return them as columns of an array.
-	"""   
-	sph = np.empty( (N,3), np.float32 )
-	
-	sph[:,2] = np.random.uniform(-1.0,1.0,N) # z-coordinates
-	z2 = np.sqrt(1.0 - sph[:,2]**2)
-	phi = (2.0 * math.pi) * np.random.random( N )
-	sph[:,0] = z2 * np.cos(phi) # x 
-	sph[:,1] = z2 * np.sin(phi) # y
-	return sph
-
-'''
-def arndSphereElevation( N, elevation, amplitude ):
-	phi = random.uniform(0,2.0*math.pi)
-	costheta = 1.0-2.0*elevation + random.uniform(-amplitude,amplitude) #random.random(-1,1)
-	if costheta<-1.0 : costheta = -1.0
-	if costheta>1.0 : costheta = 1.0	
-	theta = math.acos(costheta)
-
-	return OpenMaya.MVector( math.sin( theta) * math.cos( phi ) , math.sin( theta) * math.sin( phi ), math.cos( theta ) )
-'''
 
 def generateRandomParams( seeds ):
 	pass
@@ -568,10 +545,10 @@ eAPBR = enum('radius', 'intensity', 'length', 'max')
 eSPEBR = enum('seedBranching', 'seedChaos', 'max')
 
 # Values Depending on Generation and that are transmitted to the next generation by factor vector
-eGEN = enum('numChildren', 'numChildrenRand', 'branchingTime', 'chaosTime', 'chaosOffset', 'chaosFrequency', 'chaosVibration', 'lengthRand', 'max')
+eGEN = enum('numChildren', 'numChildrenRand', 'branchingTime', 'chaosTime', 'chaosDisplacement', 'chaosFrequency', 'chaosVibration', 'lengthRand', 'max')
 
 # Along Path values Special ( No Transfert to Child )
-eAPSPE = enum('elevation', 'elevationRand', 'childProbability', 'chaosOffset', 'max')
+eAPSPE = enum('elevation', 'elevationRand', 'childProbability', 'chaosDisplacement', 'max')
 
 class lightningBoltProcessor:
 
@@ -641,6 +618,9 @@ class lightningBoltProcessor:
 			self.APBR_ROOT = np.zeros((self.maxPoints,eAPBR.max),np.float32)
 			self.APSPE = np.zeros((self.maxPoints,eAPSPE.max),np.float32)
 			self.APSPE_ROOT = np.zeros((self.maxPoints,eAPSPE.max),np.float32)
+			self.seedPathStep = np.linspace(0.0,1.0,self.maxPoints)
+			self.onesPathStep = np.ones(self.maxPoints,np.float32)
+
 		# we parse integer values
 		elif num in [ eGLOBAL.maxGeneration, eGLOBAL.tubeSide, eGLOBAL.seedChaos, eGLOBAL.seedBranching ] :
 			self.GLOBALS[num] = int(value)
@@ -686,9 +666,19 @@ class lightningBoltProcessor:
 		self.startSeedPoints.extend( pointList )
 		self.numStartSeedBranch =  self.numStartSeedBranch + 1
 
+
 	def initializeStartBranches( self ):
 		self.randGeneralSeedChaos = nRand(self.GLOBALS[eGLOBAL.seedChaos])
 		self.randGeneralSeedBranching = nRand(self.GLOBALS[eGLOBAL.seedBranching])
+
+		# get seedPath directions and magnitude from seedPath points
+		startSeedPath = np.array( self.startSeedPoints ).reshape(self.numStartSeedBranch,self.maxPoints,3)
+		dirVectors = np.roll( startSeedPath, -1, axis=1 )
+		startUnitDir = dirVectors[:,:-1]
+		startUnitDir -= startSeedPath[:,:-1]
+		startNormDir = np.sqrt(((startUnitDir**2).sum(-1)).reshape(self.numStartSeedBranch,self.maxPoints-1,1))
+		startUnitDir /= startNormDir
+
 
 		# set time
 		self.GEN[eGEN.chaosTime] *= self.GLOBALS[eGLOBAL.time]
@@ -711,7 +701,7 @@ class lightningBoltProcessor:
 			branchSPEBRInit = self.SPEBRInit.copy()
 			startSeedBranchesSPEV.append(branchSPEBRInit)
 
-		return startSeedBranchesAPVMult, startSeedBranchesSPEV
+		return startSeedPath, startUnitDir,  startSeedBranchesAPVMult, startSeedBranchesSPEV
 
 
 
@@ -721,43 +711,23 @@ class lightningBoltProcessor:
 		epsilon = 0.00001
 
 		# unpack
-		batchSize, seedPath, APBranchMults, GenValues, SPEBRValues = batch
-
+		batchSize, seedPath, seedUnitDir, APBranchMults, GenValues, SPEBRValues = batch
+		#sys.stderr.write('seedUnitDir '+str(seedUnitDir)+'\n')
 		#sys.stderr.write('APBranchV '+str(APBranchV)+'\n')
 		#sys.stderr.write('batchSize '+str(batchSize)+'\n')
-		#sys.stderr.write('seedPath '+str(seedPath)+'\n')
 		#sys.stderr.write('Values '+str(Values)+'\n')
 		#totalBatchPoints = len(seedPath) # this should be self.maxPoints*batchSize
 
-		# duplicate the Path variation values to have one for each branch
-		#APVs = np.tile(APBranchV,(batchSize,1,1))
-
-		# get the final values at each path point ( the value from the ramp multiply by the multiplicator )
+		# get the final values at each path point ( the value from the ramp multiply by the factor )
 		APBranchMults = APBranchMults.reshape(batchSize,1,-1)
 		APBranchesArray = APBranchMults*APBranchV
-		#sys.stderr.write('test '+str(APBranchMults*APBranchV)+'\n')
-		#sys.stderr.write('APArray '+str(APArray)+'\n')
-
-		# get the a random vector for every path point (that will offset the position of seedPath)
-		#simp = simpNoise(0)
-
-
-		#sys.stderr.write('chaosTime '+str(chaosTime)+'\n')
-		#sys.stderr.write('Values[:,lightningBoltProcessor.eV.chaosTimeMult] '+str(Values[:,lightningBoltProcessor.eV.chaosTimeMult])+'\n')		
-
-		#res = simp.in2D_outVect(x, y, noisePos)
-		#sys.stderr.write('res '+str(res)+'\n')
-		#simp = simpNoise(0)
-		#for i in range(len(y)) :
-			#res2 = simp.raw_noise_2dVector( chaosTime, y[i] )
-			#sys.stderr.write('res2 '+str(res2)+'\n')
-
+	
 		# For generating childs
 		SPEBRValues[:,eSPEBR.seedBranching] += np.floor( GenValues[eGEN.branchingTime] )
 		allChildsBranchParentId = []
 		allRandValues = []
 
-		chaosOffsetArray = np.empty( (batchSize,self.maxPoints,3), np.float32 )
+		chaosDisplacementArray = np.empty( (batchSize,self.maxPoints,3), np.float32 )
 		freq = GenValues[eGEN.chaosFrequency]
 		noisePos = np.empty( (self.maxPoints,2), np.float32 )
 		noisePos[:,0] = GenValues[eGEN.chaosTime]
@@ -771,7 +741,7 @@ class lightningBoltProcessor:
 			noisePos[:,1] = np.linspace(0.0,branchLength*freq,self.maxPoints)
 
 		# primary noise ( perlin simplex output 3D Vector ) (time,branchParam)->(x,y,z)
-			chaosOffsetArray[i] = simp.in2D_outVectDim(noisePos, simp.perm[:-1] )
+			chaosDisplacementArray[i] = simp.in2D_outVectDim(noisePos, simp.perm[:-1] )
 
 		# secondary noise ( perlin simplex output amplitude ) (time,branchParam)->w
 			noisePos[:,1] *= self.GLOBALS[eGLOBAL.chaosSecondaryFreqFactor] 
@@ -783,9 +753,9 @@ class lightningBoltProcessor:
 			ampNoise *= ( self.GLOBALS[eGLOBAL.secondaryChaosMaxRemap] - self.GLOBALS[eGLOBAL.secondaryChaosMinRemap])/( self.GLOBALS[eGLOBAL.secondaryChaosMaxClamp] - self.GLOBALS[eGLOBAL.secondaryChaosMinClamp])
 			ampNoise += self.GLOBALS[eGLOBAL.secondaryChaosMinRemap]
 			#sys.stderr.write('ampNoise '+str(ampNoise)+'\n')
-			#chaosOffsetArray[i]*=ampNoise
+			#chaosDisplacementArray[i]*=ampNoise
 
-			#sys.stderr.write('chaosOffsetArray '+str(chaosOffsetArray[i])+'\n')
+			#sys.stderr.write('chaosDisplacementArray '+str(chaosDisplacementArray[i])+'\n')
 
 		# Vibration noise (pure random displacement)
 			vibrationsRand.seed( int( SPEBRValues[i,eSPEBR.seedChaos]+ np.floor(GenValues[eGEN.chaosTime]*self.GLOBALS[eGLOBAL.vibrationTimeFactor]) )  )
@@ -795,7 +765,7 @@ class lightningBoltProcessor:
 			# add vibration noise to amplitude Noise 
 			ampNoise += vibrationsArray.reshape(-1,1)
 			# multiply the amplitudeNoise to the vector from the 3D vector from the primary noise
-			chaosOffsetArray[i]*=ampNoise
+			chaosDisplacementArray[i]*=ampNoise
 
 		# childs calculations
 			if not doGenerateChilds:
@@ -809,27 +779,16 @@ class lightningBoltProcessor:
 
 
 			#sys.stderr.write('offsetArray[i] '+str(offsetArray[i])+'\n')
-
-
-		#offsetArray = (arndSphereVect(totalBatchPoints)).reshape(batchSize,self.maxPoints,3)
-		#sys.stderr.write('offsetArray '+str(offsetArray)+'\n')
 		
 
 		# multiply all the random vector by the offset multiplicator at each point
 		#test = APArray[:,:,:,lightningBoltProcessor.kAPV_Offset].reshape(1,1,batchSize,self.maxPoints,-1)
 		#sys.stderr.write('test '+str(test)+'\n')
 
-		seedPathPointsView = seedPath.reshape(batchSize,self.maxPoints,3)
+		seedPathPointsView = seedPath#.reshape(batchSize,self.maxPoints,3)
+		#sys.stderr.write('seedPathPointsView '+str(seedPathPointsView)+'\n')
 
-		# get the directions of segments before we add the chaos to the points
-		# this way the elevation direction of childs is independant from the chaos
-		dirVectorsOrig = np.roll( seedPathPointsView, -1, axis=1 )
-		unitDirOrig = dirVectorsOrig[:,:-1]
-		unitDirOrig -= seedPathPointsView[:,:-1]
-		normFrontSqrOrig = np.sqrt(((unitDirOrig**2).sum(-1)).reshape(batchSize,self.maxPoints-1,1))
-		unitDirOrig /= normFrontSqrOrig
-
-		seedPathPointsView += GenValues[eGEN.chaosOffset]*chaosOffsetArray*APSpeV[:,eAPSPE.chaosOffset].reshape(1,-1,1)
+		seedPathPointsView += GenValues[eGEN.chaosDisplacement]*chaosDisplacementArray*APSpeV[:,eAPSPE.chaosDisplacement].reshape(1,-1,1)
 		#seedPathPointsView += (offsetArray*APArray[:,:,:,eAPBR.offset].reshape(1,1,batchSize,self.maxPoints,-1))[0,0]
 		#sys.stderr.write('seedPath '+str(seedPath)+'\n')
 
@@ -939,7 +898,8 @@ class lightningBoltProcessor:
 			blend -= indexT0
 			blend = blend.reshape(-1,1)
 
-			indexT0 = (float(self.maxPoints-1)*APSpeV[indexT0,eAPSPE.childProbability]  ).astype(np.uint32)
+			#sys.stderr.write('indexT0 '+str(indexT0)+'\n')
+			indexT0 = ((float(self.maxPoints-1)-epsilon)*APSpeV[indexT0,eAPSPE.childProbability]  ).astype(np.uint32)
 
 		# Get the Along Path Per Generation Values for the elevation and elevationRand for all theses childs
 			#sys.stderr.write('APSpeV elevation '+str(APSpeV[:,eAPSPE.elevation])+'\n')
@@ -949,6 +909,7 @@ class lightningBoltProcessor:
 		# Now get the Along Path Per Branch Values
 			aChildParentId = np.array(allChildsBranchParentId, np.float32)
 			indexT0 += aChildParentId*self.maxPoints # indices must now point to the correct parent branch
+			#sys.stderr.write('indexT0 '+str(indexT0)+'\n')
 
 			#sys.stderr.write('aChildRandomsArray[0] '+str(aChildsParamGlobal)+'\n')
 			#sys.stderr.write('allChildsBranchParentId '+str(allChildsBranchParentId)+'\n')
@@ -981,7 +942,8 @@ class lightningBoltProcessor:
 			# from the algorithm of Jeppe Revall Frisvad "Building an Orthonormal Basis from a 3D Unit Vector Without Normalization"
 			childFrameCalcTemplate = np.array( [[0,0,0],[0,-1,0],[-1,0,0]], np.float32 ) # front, up, side (initial values are the singularity case of the algorithm)
 			childFramesCalc = np.tile(childFrameCalcTemplate,(len(paramIdToCalc),1,1))
-			childFramesCalc[:,0] = dirVectorsOrig.reshape(-1,3)[paramIdToCalc]
+			# we use the seed directions of segments (seedUnitDir), this way the elevation direction of childs is independant from the chaos
+			childFramesCalc[:,0] = seedUnitDir.reshape(-1,3)[paramIdToCalc]
 
 			okIds = np.where( childFramesCalc[:,0,2]>-1.0 )
 			#sys.stderr.write('okIds'+str(okIds)+'\n')
@@ -1020,12 +982,9 @@ class lightningBoltProcessor:
 			childFrames*=randomVectors.reshape(-1,3,1) # here we use the random vector coordinate in the frame of each segments to get the direction of 
 			#sys.stderr.write('childFrames'+str(childFrames)+'\n')
 			childFrames = childFrames.transpose(0,2,1).sum(-1)
+			#sys.stderr.write('childFrames'+str(childFrames)+'\n')
 			#sys.stderr.write('childFramesF'+str(childFrames)+'\n')
 			
-			# COULD BE PRECOMPUTED
-			seedPathStep = np.linspace(0.0,1.0,self.maxPoints)
-			onesPathStep = np.ones(self.maxPoints,np.float32)
-
 			#childSeedPaths = np.tile(seedPathStep,(len(APVMultChilds),1,1))
 			#sys.stderr.write('childSeedPaths'+str(childSeedPaths)+'\n')
 			#v2[:,np.newaxis]*p2
@@ -1036,17 +995,26 @@ class lightningBoltProcessor:
 			#sys.stderr.write('aChildRandomsArray[5,:] '+str(aChildRandomsArray[5,:]) +'\n' )
 			#sys.stderr.write('APBranchMultsChilds[:,eAPBR.length] '+str(APBranchMultsChilds[:,eAPBR.length]) +'\n' )
 
-			# the forumalae for length is length*(1.0 + lengthRand)
-			aChildRandomsArray[5,:] *= GenValues[eGEN.lengthRand] 
-			aChildRandomsArray[5,:] += 1.0
 			#sys.stderr.write('aChildRandomsArray[5,:] '+str(aChildRandomsArray[5,:]) +'\n' )
 			#sys.stderr.write('aChildRandomsArray[5,:]*APBranchMultsChilds[:,eAPBR.length] '+str(aChildRandomsArray[5,:,np.newaxis]*APBranchMultsChilds[:,eAPBR.length,np.newaxis]) +'\n' )
+			unitDirChilds = childFrames[:,np.newaxis]*self.onesPathStep[:-1,np.newaxis]
+			#sys.stderr.write('unitDirChilds'+str(unitDirChilds) +'\n' )
+			# the forumalae for length is length*(1.0 + lengthRand*Rand(0,1))
+			aChildRandomsArray[5,:] *= GenValues[eGEN.lengthRand] 
+			aChildRandomsArray[5,:] += 1.0
+			#normsChilds = aChildRandomsArray[5,:,np.newaxis]*APBranchMultsChilds[:,eAPBR.length,np.newaxis]
 			childFrames *= aChildRandomsArray[5,:,np.newaxis]*APBranchMultsChilds[:,eAPBR.length,np.newaxis]
-			seedPathChilds = childFrames[:,np.newaxis]*seedPathStep[:,np.newaxis]
+			#normsChilds /= float(self.maxPoints)
+			#normsChilds = normsChilds[:,np.newaxis]*onesPathStep[:-1,np.newaxis]
+			#sys.stderr.write('normsChilds'+str(normsChilds) +'\n' )
+
+			#sys.stderr.write('child length tot'+str(aChildRandomsArray[5,:,np.newaxis]*APBranchMultsChilds[:,eAPBR.length,np.newaxis]) +'\n' )
+			seedPathChilds = childFrames[:,np.newaxis]*self.seedPathStep[:,np.newaxis]
 			#sys.stderr.write('seedPathChilds'+str(seedPathChilds) +'\n' )
 
-			seedPathT0 = seedPath[indexT0]
-			startPoints = seedPathT0 + blend*( seedPath[indexT0+1] - seedPathT0 )
+			seedPathViewLine = seedPath.reshape(-1,3)
+			seedPathT0 = seedPathViewLine[indexT0]
+			startPoints = seedPathT0 + blend*( seedPathViewLine[indexT0+1] - seedPathT0 )
 
 			#sys.stderr.write('startPoints'+str(startPoints) +'\n' )
 			#tiled = np.tile(startPoints.T,(self.maxPoints,1) )
@@ -1054,10 +1022,10 @@ class lightningBoltProcessor:
 			#sys.stderr.write('startPoints[:,np.newaxis]*onesPathStep[:,np.newaxis]'+str(startPoints[:,np.newaxis]*onesPathStep[:,np.newaxis]) +'\n' )
 			#sys.stderr.write('tiled'+str(tiled.reshape(totalChildNumber,3,-1) ) +'\n' )
 
-			seedPathChilds += startPoints[:,np.newaxis]*onesPathStep[:,np.newaxis]
+			seedPathChilds += startPoints[:,np.newaxis]*self.onesPathStep[:,np.newaxis]
 			#sys.stderr.write('seedPathChilds1'+str(seedPathChilds[1]) +'\n' )
-
-			childsBatch = ( totalChildNumber, seedPathChilds.reshape(-1,3) , APBranchMultsChilds, GenValuesNext, SPEBRValuesChilds )
+			#.reshape(-1,3)
+			childsBatch = ( totalChildNumber, seedPathChilds , unitDirChilds,  APBranchMultsChilds, GenValuesNext, SPEBRValuesChilds )
 			#batchSize, seedPath, APVMults, Values, GValues = batch
 			
 			#sys.stderr.write('APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]'+str(APArray[0,:,:,lightningBoltProcessor.eAPV.intensity]) +'\n' )
@@ -1075,12 +1043,12 @@ class lightningBoltProcessor:
 		# intensity color template
 		colorTemplate = np.ones( (self.GLOBALS[eGLOBAL.tubeSide],4), np.float32 )
 
-		startSeedBranchesAPVMult, startSeedBranchesSPEV = self.initializeStartBranches()
+		startSeedPath, startUnitDir, startSeedBranchesAPVMult, startSeedBranchesSPEV = self.initializeStartBranches()
+		#sys.stderr.write('startSeedPathTemp '+str(startSeedPathTemp)+'\n')
 
 		self.timer.start()
 
 		# --- create the first datas (seedPath, attributes ) to process 
-		startSeedPath = np.array( self.startSeedPoints )
 		startSeedAPVMult = np.array( [startSeedBranchesAPVMult] ) 
 		startSeedBranchSpeValues = np.array( startSeedBranchesSPEV )
 		
@@ -1099,7 +1067,7 @@ class lightningBoltProcessor:
 		resultIntensities = []
 
 		batchSize = self.numStartSeedBranch
-		batch = batchSize, startSeedPath, startSeedAPVMult, self.GEN, startSeedBranchSpeValues
+		batch = batchSize, startSeedPath, startUnitDir, startSeedAPVMult, self.GEN, startSeedBranchSpeValues
 
 		while batch is not None:
 			outFrames, outIntensities, childBatch = self.generate( batch, APBranch, APSpe, APBranchTransfert, GenTransfert, isLooping, currentGeneration<self.GLOBALS[eGLOBAL.maxGeneration])
