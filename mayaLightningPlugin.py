@@ -29,9 +29,6 @@ import maya.OpenMayaMPx as OpenMayaMPx
 import maya.mel as mel
 
 
-kPluginNodeName = "lightningbolt"
-kPluginNodeId = OpenMaya.MTypeId(0x8700B)
-
 def enum(*sequential, **named):
 	enums = dict(zip(sequential, range(len(sequential))), **named)
 	return type('Enum', (), enums)
@@ -288,6 +285,9 @@ class ATTAccessor:
 import numpy as np
 import math
 
+kPluginNodeName = "lightningbolt"
+kPluginNodeId = OpenMaya.MTypeId(0x8700B)
+
 class MLG_msCommandException(Exception):
     def __init__(self,message):
         self.message = '[MLG] '+message
@@ -310,8 +310,6 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 
 	numVertices = len(resultPoints)/4
 	numFaces = len(facesCount)
-	#sys.stderr.write("vertices "+str(numVertices)+" \n")
-	#sys.stderr.write("faces "+str(numFaces)+" \n")
 
 	scrUtil = OpenMaya.MScriptUtil()
 	scrUtil.createFromList( resultPoints, len(resultPoints))
@@ -329,7 +327,7 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 
 	mObj = meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
 
-	# vertexColors
+# vertexColors
 	scrUtil.createFromList( resultIntensityColors, len(resultIntensityColors))
 	MColors = OpenMaya.MColorArray( scrUtil.asDouble4Ptr(), numVertices )
 
@@ -338,14 +336,12 @@ def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPo
 
 	name = 'lightningIntensity'
 	fName = meshFn.createColorSetDataMesh(name)
-
 	meshFn.setVertexColors( MColors, MVertexIds )
 	
-	#sys.stderr.write("mesh contruit \n")
 	return outData
 
 def loadGeneralLightningScript():
-	# here we load also the python global script wich should be in the same folder as this plugin
+	# here we load also the processor python script wich should be in the same folder as this plugin
 	# see http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin
 	import inspect, os
 	currentPluginPath = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -358,7 +354,7 @@ def loadGeneralLightningScript():
 
 	return mainLightningModule
 
-def fillArrayFromRampAtt( array, ramp):
+def fillArrayFromRampAtt( array, ramp, clampValues=None ):
 	inc = 1.0/(array.size-1)
 	param = 0.0
 	valAt_util = OpenMaya.MScriptUtil()
@@ -366,17 +362,22 @@ def fillArrayFromRampAtt( array, ramp):
 	valAtPtr = valAt_util.asFloatPtr()
 	for i in range(array.size):
 		ramp.getValueAtPosition(param,valAtPtr)
-		array[i] = valAt_util.getFloat(valAtPtr)
+
+		if clampValues is None:
+			array[i] = valAt_util.getFloat(valAtPtr)
+		else:
+			minv, maxv = clampValues
+			array[i] = min ( maxv, max(valAt_util.getFloat(valAtPtr),minv) )
 		param=param+inc	
 
-def setupABVFromRamp( arrays, ramp):
+def setupABVFromRamp( arrays, ramp, clampValues=None):
 	array, arrayRoot = arrays
 	if array.size <1 :
 		raise MLG_msCommandException('array size must be more than 1')
 	fillArrayFromRampAtt( array, ramp)
-	sys.stderr.write('array '+str(array)+'\n')
+	#sys.stderr.write('array '+str(array)+'\n')
 
-def setupABRootVFromRamp( arrays, ramp):
+def setupABRootVFromRamp( arrays, ramp, clampValues=None):
 	array, arrayRoot = arrays
 	if arrayRoot.size <1 :
 		raise MLG_msCommandException('array size must be more than 1')
@@ -387,6 +388,8 @@ def setupABRootVFromRamp( arrays, ramp):
 
 
 def getPointListFromCurve( numPoints, fnCurve, lengthScale):
+	lengthScale = max(0.0, min(1.0,lengthScale) ) # clamp lengthScale to avoid query parameter outside [0,1]
+
 	startTemp = OpenMaya.MScriptUtil()
 	startTemp.createFromDouble(0.0)
 	startPtr = startTemp.asDoublePtr()
@@ -1038,7 +1041,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 	# -- Compute Along Branch Ramp : Child Probability
 		elif acc.needCompute( eCG.childProbabilityAB, plug ):
 			childProbabilityABRamp = acc.get(lightningBoltNode.childProbabilityAlongBranchIndex)
-			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), childProbabilityABRamp )
+			epsilon = 0.00001 # we clamp the values for childProbability, it's important since it remap array indices
+			setupABVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), childProbabilityABRamp, (epsilon,1.0-epsilon) )
 			# child probability need a copy of the normal values to the root because there is no override to do it
 			setupABRootVFromRamp( self.LP.getAPSPE( lightningBoltNode.LM.eAPSPE.childProbability ), None )
 			acc.setClean(eCG.childProbabilityAB, data)
@@ -1341,6 +1345,7 @@ def nodeInitializer():
 # OUTPUTS
 	lightningBoltNode.nhlp.createAtt( 'outputMesh', 'om', eHlpT.mesh, eCG.main, isInput=False )
 
+# Dependencies of some of the Compute Groups
 	lightningBoltNode.nhlp.addGroupDependencies( eCG.radiusAB, [eCG.detail] )
 	lightningBoltNode.nhlp.addGroupDependencies( eCG.childLengthAB, [eCG.detail] )
 	lightningBoltNode.nhlp.addGroupDependencies( eCG.intensityAB, [eCG.detail] )
@@ -1358,13 +1363,12 @@ def nodeInitializer():
 	
 	lightningBoltNode.nhlp.addGroupDependencies( eCG.main, [ eCG.radiusAB, eCG.childLengthAB, eCG.intensityAB, eCG.chaosOffsetAB, eCG.elevationAB, eCG.elevationRandAB, eCG.childProbabilityAB, eCG.radiusABRoot, eCG.childLengthABRoot, eCG.intensityABRoot, eCG.chaosOffsetABRoot, eCG.elevationABRoot, eCG.elevationRandABRoot ] )
 
+# Adding attributes, generating affects etc...
 	lightningBoltNode.nhlp.finalizeAttributeInitialization()
-	sys.stderr.write('end of initialize\n')
-
 
 def cleanupClass():
-	delattr(lightningBoltNode,'LM')
 	lightningBoltNode.nhlp.cleanUp()
+	delattr(lightningBoltNode,'LM')
 	delattr(lightningBoltNode,'nhlp')
 
 # initialize the script plug-in
