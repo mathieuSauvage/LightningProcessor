@@ -7,6 +7,12 @@
 import pymel.core as pm
 pm.loadPlugin('/Users/mathieu/Documents/IMPORTANT/Perso/Prog/python/lightningProcessor/mayaLightningPlugin.py')
 
+global proc string curveToLightning( string $elems[] )
+{
+	
+
+}
+
 lightNode = pm.createNode('lightningbolt')
 meshNode = pm.createNode('mesh')
 pm.connectAttr( 'time1.outTime', lightNode+'.time')
@@ -29,11 +35,12 @@ import maya.OpenMayaMPx as OpenMayaMPx
 import maya.mel as mel
 
 
+#------------------- Here is the Helper Class to make to process of creating, accessing and setting the influence of attributes less tedious
+
 def enum(*sequential, **named):
 	enums = dict(zip(sequential, range(len(sequential))), **named)
 	return type('Enum', (), enums)
 
-#------------------- Here is the Helper Class to make to process of creating, accessing and setting the influence of attributes less tedious
 class MAH_msCommandException(Exception):
     def __init__(self,message):
         self.message = '[MAH] '+message
@@ -122,7 +129,7 @@ class MayaAttHelper:
 
 	def createAtt( self, name, shortName, type, computeGpIds, isInput=True, default=None, addAttr=True, isArray=False, isCached=True, discBehavior=eHlpDiscBehavior.nothing ):
 		attIndex = len(self.attributes)
-		sys.stderr.write('adding attribute '+name+'\n')
+		sys.stderr.write('creating attribute '+name+'\n')
 
 		for a in self.attributes: # check uniqueness of names
 			if a.name == name :
@@ -205,7 +212,7 @@ class MayaAttHelper:
 
 	def finalizeAttributeInitialization( self ):
 		#---- first check the compute groups, if one has no OUT then create one "dummy" out for it
-		sys.stderr.write('adding dummies \n')
+		sys.stderr.write('adding dummies output attributes\n')
 		for cpGp in self.computeGroups:
 			if len(cpGp.OUTS) == 0:
 				dumName = 'dummyOUT_'+cpGp.INS[0].name
@@ -216,13 +223,13 @@ class MayaAttHelper:
 				dumName += str(numDum)
 				self.createAtt( dumName, 'dO_'+cpGp.INS[0].shortName+str(numDum), eHlpT.int , cpGp.id, False )
 		#---- then add all Attributes that need to be added to the node
-		sys.stderr.write('adding atts \n')
+		sys.stderr.write('adding attribute blueprints to node \n')
 		for a in self.attributes:
 			if not a.addAttr: # some attributes don't need to be added like double3
 				continue
 			self.nodeClass.addAttribute( a.mObject )
 		#---- then we can declare affects
-		sys.stderr.write('declare affects \n')
+		sys.stderr.write('declare affects of attributes\n')
 		for cpGp in self.computeGroups:
 			if len(cpGp.affect) > 0: # this compute group affect something it is not a top affect group, skip
 				continue
@@ -301,6 +308,7 @@ class ATTAccessor:
 		if boolVal:
 			return self.get( att )
 
+#----------------------------------------- END Helper classes 
 #######################################################
 
 import numpy as np
@@ -422,22 +430,15 @@ def getPointListFromCurve( numPoints, fnCurve, lengthScale):
 	fnCurve.getKnotDomain(startPtr, endPtr)
 	paramStart = startTemp.getDouble(startPtr)
 	paramEnd = endTemp.getDouble(endPtr)-0.000001
-	#sys.stderr.write('paramEnd '+str(paramEnd)+'\n')
 	
 	step = lengthScale*(paramEnd - paramStart)/(numPoints-1)
 	
 	pt=OpenMaya.MPoint()
 	param=paramStart
 	res = []
-	#fullLength = 0
 	for i in range(numPoints):
-		#sys.stderr.write('i '+str(i)+' param '+str(param)+'\n')
 		fnCurve.getPointAtParam(param, pt)
 		res.append( [pt.x,pt.y,pt.z] )
-		#if i>0 :
-		#	fullLength += math.sqrt(res[i-1][0]*pt.x + res[i-1][1]*pt.y + res[i-1][2]*pt.z) 
-		#sys.stderr.write('fullLength '+str(fullLength)+'\n')
-
 		param += step
 	return res, lengthScale*fnCurve.length()
 
@@ -669,9 +670,23 @@ global proc AElightningProcessorTemplate( string $nodeName )
 			editorTemplate -addControl "time";
 			editorTemplate -addControl "maxGeneration";
 			editorTemplate -addControl "seedChaos";
-			editorTemplate -addControl "seedBranching";
+			editorTemplate -addControl "seedSkeleton";
 			editorTemplate -addControl "tubeSides";
 			editorTemplate -addControl "detail";
+		editorTemplate -endLayout;
+		
+		editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosTimeMultiplier" "transfertChaosTime";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "skeletonTimeMultiplier" "transfertSkeletonTime";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transfertChaosTimeRoot" "transfertSkeletonTimeRoot";				
+			editorTemplate -s "chaosTimeMultiplier";
+			editorTemplate -s "vibrationFreqFactor";
+			editorTemplate -s "transfertChaosTime";
+			editorTemplate -s "skeletonTimeMultiplier";
+			editorTemplate -s "transfertSkeletonTime";
+			editorTemplate -s "timeRootOverride";
+			editorTemplate -s "transfertChaosTimeRoot";
+			editorTemplate -s "transfertSkeletonTimeRoot";	
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Length Attributes ⟧" -collapse 1;
@@ -704,44 +719,30 @@ global proc AElightningProcessorTemplate( string $nodeName )
 
 		editorTemplate -beginLayout "⟦ Intensity Attributes ⟧ (Vertex Color)" -collapse 1;
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "intensity" "transfertIntensity";
-			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "intensityAlongPath";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutIntensity" "LGHTAEOverrideLayoutIntensity_Replace" "intensityRootOverride" "transfertIntensityRoot" "intensityAlongPathRoot";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "intensityAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutIntensity" "LGHTAEOverrideLayoutIntensity_Replace" "intensityRootOverride" "transfertIntensityRoot" "intensityAlongBranchRoot";
 
 			editorTemplate -s "intensity";
 			editorTemplate -s "transfertIntensity";
-			editorTemplate -s "intensityAlongPath";
+			editorTemplate -s "intensityAlongBranch";
 			editorTemplate -s "intensityRootOverride";
-			editorTemplate -s "intensityAlongPathRoot";
+			editorTemplate -s "intensityAlongBranchRoot";
 			editorTemplate -s "transfertIntensityRoot";	
-		editorTemplate -endLayout;
-
-		editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "timeChaos" "transfertTimeChaos";
-			editorTemplate -addControl "vibrationTimeFactor";
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "timeBranching" "transfertTimeBranching";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transfertTimeChaosRoot" "transfertTimeBranchingRoot";				
-			editorTemplate -s "timeChaos";
-			editorTemplate -s "vibrationTimeFactor";
-			editorTemplate -s "transfertTimeChaos";
-			editorTemplate -s "timeBranching";
-			editorTemplate -s "transfertTimeBranching";
-			editorTemplate -s "timeRootOverride";
-			editorTemplate -s "transfertTimeChaosRoot";
-			editorTemplate -s "transfertTimeBranchingRoot";	
 		editorTemplate -endLayout;
 	
 		editorTemplate -beginLayout "⟦ Chaos Attributes ⟧" -collapse 1;
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosDisplacement" "transfertChaosOffset";
 			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosFrequency" "transfertChaosFrequency";
-			editorTemplate -addControl "secondaryChaosFreqFactor";
-			editorTemplate -addControl "secondaryChaosMinClamp";
-			editorTemplate -addControl "secondaryChaosMaxClamp";
-			editorTemplate -addControl "secondaryChaosMinRemap";
-			editorTemplate -addControl "secondaryChaosMaxRemap";
-
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosVibration" "transfertChaosVibration";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosDisplacementAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";			
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";
+
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosFreqFactor";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinClamp";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxClamp";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinRemap";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxRemap";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosVibration" "transfertChaosVibration";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "vibrationFreqFactor";
 
 			editorTemplate -s "chaosDisplacementRootOverride";
 			editorTemplate -s "transfertChaosOffsetRoot";
@@ -755,26 +756,33 @@ global proc AElightningProcessorTemplate( string $nodeName )
 			editorTemplate -s "chaosVibration";
 			editorTemplate -s "transfertChaosVibration";
 
+			editorTemplate -s "secondaryChaosFreqFactor";
+			editorTemplate -s "secondaryChaosMinClamp";
+			editorTemplate -s "secondaryChaosMaxClamp";
+			editorTemplate -s "secondaryChaosMinRemap";
+			editorTemplate -s "secondaryChaosMaxRemap";
+			editorTemplate -s "vibrationFreqFactor";
+
 			editorTemplate -s "chaosDisplacementAlongBranch";
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Childs Generation Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildren" "transfertNumChildren";
-			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "numChildrenRand" "transfertNumChildrenRand";
+			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumber" "transfertNumChildren";
+			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumberRand" "transfertNumChildrenRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childProbabilityAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "numChildrenRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "childrenNumberRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
 
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationAlongBranch";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationRandAlongBranch";
 			editorTemplate -callCustom "LGHTAEOverrideLayoutElevation" "LGHTAEOverrideLayoutElevation_Replace" "elevationRootOverride" "elevationAlongBranchRoot" "elevationRandAlongBranchRoot";
 
-			editorTemplate -s "numChildren";
+			editorTemplate -s "childrenNumber";
 			editorTemplate -s "transfertNumChildren";
-			editorTemplate -s "numChildrenRand";
+			editorTemplate -s "childrenNumberRand";
 			editorTemplate -s "transfertNumChildrenRand";
 			editorTemplate -s "childProbabilityAlongBranch";
 
-			editorTemplate -s "numChildrenRootOverride";
+			editorTemplate -s "childrenNumberRootOverride";
 			editorTemplate -s "transfertNumChildrenRoot";
 			editorTemplate -s "transfertNumChildrenRandRoot";			
 			editorTemplate -s "elevationRootOverride";
@@ -797,7 +805,7 @@ global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, stri
 	string $att2 = attName($att2S);
 
 	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
-	rowLayout -nc 5 -cw5 110 35 55 100 30;
+	rowLayout -nc 5 -cw5 130 35 55 100 30;
 	if ($name == "")
 	{
 		$name = `attributeName -nice $att1S`;
@@ -818,7 +826,6 @@ global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, stri
 	setParent ..;
 
 	LGHTAELineBaseTransfertLayout_Replace( $att1S, $att2S );
-
 }
 
 global proc LGHTAELineBaseIntTransfertLayout( string $baseAttS, string $transfertAttS )
@@ -839,12 +846,49 @@ global proc LGHTAELineBaseTransfertLayout_Replace( string $baseAttS, string $tra
 	connectControl ($trans+"_fldGrp") $transfertAttS;	
 }
 
+global proc LGHTAELineBaseAttribute ( string $name, string $att1S, int $isFloat )
+{
+	string $att1 = attName($att1S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 2 -cw2 165 55;
+	if ($name == "")
+	{
+		$name = `attributeName -nice $att1S`;
+	}
+	text -label $name -align "left";
+	if ($isFloat == 1)
+	{
+		floatField -w 35 ($att1+"_fldGrp");
+	}
+	else
+	{
+		intField -w 35 ($att1+"_fldGrp");	
+	}
+	setParent ..;
+	setParent ..;
+
+	LGHTAELineBaseLayout_Replace( $att1S );
+
+}
+
+global proc LGHTAELineBaseLayout_Replace( string $baseAttS )
+{
+	string $base = attName($baseAttS);
+	connectControl ($base+"_fldGrp") $baseAttS;
+}
+
+global proc LGHTAELineBaseFloatAttribute ( string $att1S )
+{
+	LGHTAELineBaseAttribute ( "", $att1S, 1);
+}
+
 global proc LGHTAELineTransfertAttribute( string $name, string $attS )
 {
 	string $att = attName($attS);
 
 	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
-	rowLayout -nc 3 -cw3 110 100 30;
+	rowLayout -nc 3 -cw3 145 100 30;
 	if ($name == "")
 		$name = `attributeName -nice $attS`;
 
@@ -872,7 +916,6 @@ global proc string attName( string $att )
 global proc enableOverrideFL( string $fl, string $chb )
 {
 	int $v = `checkBox -q -v $chb`;
-	//frameLayout -e -cl (!$v) $fl;
 	frameLayout -e -vis ($v) $fl;
 }
 
@@ -883,7 +926,6 @@ global proc LGHTAEOverrideLayoutGeneric( string $name, string $overrideAttS )
 	string $flName = ($overrideAtt+"_FL");
 	columnLayout -rowSpacing 1 -cat "left" 15 -adj true;
 	checkBox -label ("Activate Root "+$name+" Overrides") $chkName;
-	//checkBox -label ("Root "+$name+" Overrides") -cc ( "enableOverrideFL( \\""+$flName+"\\" ,\\""+$chkName+"\\")" ) $chkName;
 	frameLayout -collapsable false -cl false -lv false -vis true -borderStyle "in" -mw 0 -mh 5 $flName;
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
 }
@@ -939,8 +981,8 @@ global proc LGHTAEOverrideLayoutRadius_Replace( string $overrideAttS , string $a
 global proc LGHTAEOverrideLayoutTime( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
 {
 	LGHTAEOverrideLayoutGeneric( "Time", $overrideAttS );
-	LGHTAELineTransfertAttribute( "timeChaos", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "timeBranching", $attRoot2TrS );
+	LGHTAELineTransfertAttribute( "Chaos Time Multiplier", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Skeleton Time Multiplier", $attRoot2TrS );
 }
 
 global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
@@ -953,8 +995,8 @@ global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $att
 global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Children Nums", $overrideAttS );
-	LGHTAELineTransfertAttribute( "numChildren", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "numChildrenRand", $attRoot2TrS );
+	LGHTAELineTransfertAttribute( "Children Number", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Children Number Rand", $attRoot2TrS );
 	LGHTAERampControl( $attRootRpS );
 }
 
@@ -983,8 +1025,8 @@ global proc LGHTAEOverrideLayoutElevation_Replace( string $overrideAttS , string
 global proc LGHTAEOverrideLayoutChaos( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Chaos", $overrideAttS );
-	LGHTAELineTransfertAttribute( "chaosDisplacement", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "chaosFrequency", $attRoot2TrS );
+	LGHTAELineTransfertAttribute( "Chaos Displacement", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Chaos Frequency", $attRoot2TrS );
 	LGHTAERampControl( $attRoot1RpS );
 }
 
@@ -1028,7 +1070,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			acc.setClean(eCG.radiusAB, data)
 	# -- Compute Along Branch Ramp : Intensity
 		elif acc.needCompute( eCG.intensityAB, plug ):
-			IntensityABRamp = acc.get(LBProcNode.intensityAlongPathIndex)	
+			IntensityABRamp = acc.get(LBProcNode.intensityAlongBranchIndex)	
 			setupABVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), IntensityABRamp )
 			if not acc.get( LBProcNode.intensityRootOverrideIndex ): # if no Root override then copy
 				setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), None )
@@ -1065,8 +1107,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 		elif acc.needCompute( eCG.childProbabilityAB, plug ):
 			childProbabilityABRamp = acc.get(LBProcNode.childProbabilityAlongBranchIndex)
 			epsilon = 0.00001 # we clamp the values for childProbability, it's important since it remap array indices
-			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRamp, (epsilon,1.0-epsilon) )
-			if not acc.get( LBProcNode.numChildrenRootOverrideIndex ):# if no Root override then copy
+			setupABVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRamp, (0.0,1.0) )
+			if not acc.get( LBProcNode.childrenNumberRootOverrideIndex ):# if no Root override then copy
 				setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), None )			
 			#setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), None ) # child probability need a copy of the normal values to the root because there is no override to do it
 			acc.setClean(eCG.childProbabilityAB, data)
@@ -1086,7 +1128,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			acc.setClean(eCG.childLengthABRoot, data)
 	# -- Compute ROOT Along Branch Ramp : Intensity
 		elif acc.needCompute( eCG.intensityABRoot, plug ):
-			intensityABRootRamp = acc.get(LBProcNode.intensityAlongPathRootIndex)	
+			intensityABRootRamp = acc.get(LBProcNode.intensityAlongBranchRootIndex)	
 			if not acc.get( LBProcNode.intensityRootOverrideIndex ):
 				intensityABRootRamp = None # if none the values of the Normal Ramp are copied to the Root Ramp
 			setupABRootVFromRamp( self.LP.getAPBR( LBProcNode.LM.eAPBR.intensity ), intensityABRootRamp )
@@ -1115,10 +1157,10 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 	# -- Compute ROOT Along Branch Ramp : Child Probability
 		elif acc.needCompute( eCG.childProbabilityABRoot, plug ):
 			childProbabilityABRootRamp = acc.get(LBProcNode.childProbabilityAlongBranchRootIndex)	
-			if not acc.get( LBProcNode.numChildrenRootOverrideIndex ):
+			if not acc.get( LBProcNode.childrenNumberRootOverrideIndex ):
 				childProbabilityABRootRamp = None
 			epsilon = 0.00001 # we clamp the values for childProbability, it's important since it remap array indices
-			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRootRamp, (epsilon,1.0-epsilon) )
+			setupABRootVFromRamp( self.LP.getAPSPE( LBProcNode.LM.eAPSPE.childProbability ), childProbabilityABRootRamp, (0.0,1.0) )
 			acc.setClean(eCG.childProbabilityABRoot, data)
 
 	# -- Compute MAIN
@@ -1128,14 +1170,14 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			timeValue = acc.get( LBProcNode.timeIndex)
 			tubeSidesValue = acc.get( LBProcNode.tubeSidesIndex)
 			maxGenerationValue = acc.get( LBProcNode.maxGenerationIndex)
-			vibrationTimeFactorValue = acc.get( LBProcNode.vibrationTimeFactorIndex)
+			vibrationFreqFactorValue = acc.get( LBProcNode.vibrationFreqFactorIndex)
 			secondaryChaosFreqFactorValue = acc.get( LBProcNode.secondaryChaosFreqFactorIndex )
 			secondaryChaosMinClampValue = acc.get( LBProcNode.secondaryChaosMinClampIndex )
 			secondaryChaosMaxClampValue = acc.get( LBProcNode.secondaryChaosMaxClampIndex )
 			secondaryChaosMinRemapValue = acc.get( LBProcNode.secondaryChaosMinRemapIndex )
 			secondaryChaosMaxRemapValue = acc.get( LBProcNode.secondaryChaosMaxRemapIndex )
 			seedChaosValue = acc.get( LBProcNode.seedChaosIndex)
-			seedBranchingValue = acc.get( LBProcNode.seedBranchingIndex)
+			seedSkeletonValue = acc.get( LBProcNode.seedSkeletonIndex)
 
 			# Along Branch dependent values
 			radiusValue = acc.get( LBProcNode.radiusIndex)
@@ -1145,10 +1187,10 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# Generation dependent values
 			chaosFrequencyValue = acc.get( LBProcNode.chaosFrequencyIndex)
 			chaosVibrationValue = acc.get( LBProcNode.chaosVibrationIndex)
-			numChildrenValue = acc.get( LBProcNode.numChildrenIndex)
-			numChildrenRandValue = acc.get( LBProcNode.numChildrenRandIndex)
-			timeChaosValue = acc.get( LBProcNode.timeChaosIndex)
-			timeBranchingValue = acc.get( LBProcNode.timeBranchingIndex)
+			childrenNumberValue = acc.get( LBProcNode.childrenNumberIndex)
+			childrenNumberRandValue = acc.get( LBProcNode.childrenNumberRandIndex)
+			chaosTimeMultiplierValue = acc.get( LBProcNode.chaosTimeMultiplierIndex)
+			skeletonTimeMultiplierValue = acc.get( LBProcNode.skeletonTimeMultiplierIndex)
 			chaosDisplacementMultValue = acc.get( LBProcNode.chaosDisplacementIndex)
 			lengthRandValue = acc.get( LBProcNode.lengthRandIndex)
 			
@@ -1159,8 +1201,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 
 			# Transfert of Generation dependent values
 			transfertChaosOffsetValue = acc.get( LBProcNode.transfertChaosOffsetIndex)
-			transfertTimeBranchingValue = acc.get( LBProcNode.transfertTimeBranchingIndex)
-			transfertTimeChaosValue = acc.get( LBProcNode.transfertTimeChaosIndex)
+			transfertSkeletonTimeValue = acc.get( LBProcNode.transfertSkeletonTimeIndex)
+			transfertChaosTimeValue = acc.get( LBProcNode.transfertChaosTimeIndex)
 			transfertNumChildrenValue = acc.get( LBProcNode.transfertNumChildrenIndex)
 			transfertNumChildrenRandValue = acc.get( LBProcNode.transfertNumChildrenRandIndex)
 			transfertChaosFrequencyValue = acc.get( LBProcNode.transfertChaosFrequencyIndex)
@@ -1175,14 +1217,14 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# Intensity
 			transfertIntensityRootValue = acc.getIf( LBProcNode.intensityRootOverrideIndex, LBProcNode.transfertIntensityRootIndex )
 			# Times
-			transfertTimeChaosRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertTimeChaosRootIndex )
-			transfertTimeBranchingRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertTimeBranchingRootIndex )
+			transfertChaosTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertChaosTimeRootIndex )
+			transfertSkeletonTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertSkeletonTimeRootIndex )
 			# Chaos
 			transfertChaosOffsetRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosOffsetRootIndex )
 			transfertChaosFrequencyRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosFrequencyRootIndex )
 			# num Children
-			transfertNumChildrenRootValue = acc.getIf( LBProcNode.numChildrenRootOverrideIndex, LBProcNode.transfertNumChildrenRootIndex )
-			transfertNumChildrenRandRootValue = acc.getIf( LBProcNode.numChildrenRootOverrideIndex, LBProcNode.transfertNumChildrenRandRootIndex )
+			transfertNumChildrenRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transfertNumChildrenRootIndex )
+			transfertNumChildrenRandRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transfertNumChildrenRandRootIndex )
 
 			tempCurves = acc.get(LBProcNode.inputCurvesIndex)
 			if tempCurves == []:
@@ -1204,9 +1246,9 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.time, timeValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.maxGeneration, maxGenerationValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.tubeSide, tubeSidesValue )
-			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.vibrationTimeFactor, vibrationTimeFactorValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.vibrationFreqFactor, vibrationFreqFactorValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedChaos, seedChaosValue )
-			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedBranching, seedBranchingValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedSkeleton, seedSkeletonValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.chaosSecondaryFreqFactor, secondaryChaosFreqFactorValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMinClamp, secondaryChaosMinClampValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.secondaryChaosMaxClamp, secondaryChaosMaxClampValue )
@@ -1225,26 +1267,23 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# load the Generation inputs
 			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosFrequency, chaosFrequencyValue )
 			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosVibration, chaosVibrationValue )
-			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosTime, timeChaosValue )
-			self.LP.setGENValue( LBProcNode.LM.eGEN.branchingTime, timeBranchingValue )
-			self.LP.setGENValue( LBProcNode.LM.eGEN.numChildren, numChildrenValue )
-			self.LP.setGENValue( LBProcNode.LM.eGEN.numChildrenRand, numChildrenRandValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosTime, chaosTimeMultiplierValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.skeletonTime, skeletonTimeMultiplierValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.childrenNumber, childrenNumberValue )
+			self.LP.setGENValue( LBProcNode.LM.eGEN.childrenNumberRand, childrenNumberRandValue )
 			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosDisplacement, chaosDisplacementMultValue )
 			self.LP.setGENValue( LBProcNode.LM.eGEN.lengthRand, lengthRandValue )
 			# the corresponding transfert values
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.branchingTime, transfertTimeBranchingValue, transfertTimeBranchingRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosTime, transfertTimeChaosValue, transfertTimeChaosRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.skeletonTime, transfertSkeletonTimeValue, transfertSkeletonTimeRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosTime, transfertChaosTimeValue, transfertChaosTimeRootValue )
 			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosDisplacement, transfertChaosOffsetValue, transfertChaosOffsetRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.numChildren, transfertNumChildrenValue, transfertNumChildrenRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.numChildrenRand, transfertNumChildrenRandValue, transfertNumChildrenRandRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.childrenNumber, transfertNumChildrenValue, transfertNumChildrenRootValue )
+			self.LP.setGENTransfert( LBProcNode.LM.eGEN.childrenNumberRand, transfertNumChildrenRandValue, transfertNumChildrenRandRootValue )
 			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosFrequency, transfertChaosFrequencyValue, transfertChaosFrequencyRootValue )
 			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosVibration, transfertChaosVibrationValue )
 			self.LP.setGENTransfert( LBProcNode.LM.eGEN.lengthRand, transfertLengthRandValue )
-					
-			outputData = self.LP.process()
-			
-			sys.stderr.write('set data\n')
-			outputHandle.setMObject(outputData)
+								
+			outputHandle.setMObject( self.LP.process() )
 			acc.setClean(eCG.main, data)
 		else:
 			return OpenMaya.kUnknownParameter
@@ -1267,11 +1306,11 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 		self.postConstructorRampInitialize( LBProcNode.radiusAlongBranchRoot, [(0,1),(1,0.5)] )
 		self.postConstructorRampInitialize( LBProcNode.childLengthAlongBranch, [(0,1),(1,.25)] )
 		self.postConstructorRampInitialize( LBProcNode.childLengthAlongBranchRoot, [(0,1),(1,.25)] )
-		self.postConstructorRampInitialize( LBProcNode.intensityAlongPath, [(0,1),(.15,0.8)] )
-		self.postConstructorRampInitialize( LBProcNode.intensityAlongPathRoot, [(0,1),(1,0.85)] )
+		self.postConstructorRampInitialize( LBProcNode.intensityAlongBranch, [(0,1),(.15,0.8)] )
+		self.postConstructorRampInitialize( LBProcNode.intensityAlongBranchRoot, [(0,1),(1,0.85)] )
 
 		self.postConstructorRampInitialize( LBProcNode.chaosDisplacementAlongBranch, [(0,0),(.05,1)] )
-		self.postConstructorRampInitialize( LBProcNode.chaosDisplacementAlongBranchRoot, [(0,0),(.05,1)] )
+		self.postConstructorRampInitialize( LBProcNode.chaosDisplacementAlongBranchRoot, [(0,0),(.05,1), (0.85,1.0), (1.0,.2)] )
 		self.postConstructorRampInitialize( LBProcNode.elevationAlongBranch, [(0,0.12),(1,0)] )
 		self.postConstructorRampInitialize( LBProcNode.elevationAlongBranchRoot, [(0,0.12),(1,0)] )
 		self.postConstructorRampInitialize( LBProcNode.elevationRandAlongBranch, [(0,0.12),(0,0.3)] )
@@ -1295,27 +1334,27 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.main, default=4 )
 	LBProcNode.MHLP.createAtt( 'maxGeneration', 'mg', eHlpT.int, eCG.main, default=3 )
 	LBProcNode.MHLP.createAtt( 'seedChaos', 'sc', eHlpT.int, eCG.main, default=0 )
-	LBProcNode.MHLP.createAtt( 'seedBranching', 'sb', eHlpT.int, eCG.main, default=0 )
-	LBProcNode.MHLP.createAtt( 'vibrationTimeFactor', 'vtf', eHlpT.double, eCG.main, default=150.0 )
+	LBProcNode.MHLP.createAtt( 'seedSkeleton', 'ss', eHlpT.int, eCG.main, default=0 )
 	LBProcNode.MHLP.createAtt( 'secondaryChaosFreqFactor', 'scff', eHlpT.double, eCG.main, default=4.5 )
 	LBProcNode.MHLP.createAtt( 'secondaryChaosMinClamp', 'scmnc', eHlpT.double, eCG.main, default=.25 )
 	LBProcNode.MHLP.createAtt( 'secondaryChaosMaxClamp', 'scmxc', eHlpT.double, eCG.main, default=0.75 )
 	LBProcNode.MHLP.createAtt( 'secondaryChaosMinRemap', 'scmnr', eHlpT.double, eCG.main, default=0.6 )
 	LBProcNode.MHLP.createAtt( 'secondaryChaosMaxRemap', 'scmxr', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'vibrationFreqFactor', 'vff', eHlpT.double, eCG.main, default=6.0 )
 
 # Generation Values
-	LBProcNode.MHLP.createAtt( 'timeChaos', 'tc', eHlpT.double, eCG.main, default=8.0 )
-	LBProcNode.MHLP.createAtt( 'timeBranching', 'tb', eHlpT.double, eCG.main, default=6.5 )
+	LBProcNode.MHLP.createAtt( 'chaosTimeMultiplier', 'ctm', eHlpT.double, eCG.main, default=8.0 )
+	LBProcNode.MHLP.createAtt( 'skeletonTimeMultiplier', 'stm', eHlpT.double, eCG.main, default=6.5 )
 	LBProcNode.MHLP.createAtt( 'chaosFrequency', 'cf', eHlpT.double, eCG.main, default=0.15 )
 	LBProcNode.MHLP.createAtt( 'chaosVibration', 'cv', eHlpT.double, eCG.main, default=0.15 )
-	LBProcNode.MHLP.createAtt( 'numChildren', 'nc', eHlpT.int, eCG.main, default=1 )
-	LBProcNode.MHLP.createAtt( 'numChildrenRand', 'ncr', eHlpT.int, eCG.main, default=3 )
+	LBProcNode.MHLP.createAtt( 'childrenNumber', 'cn', eHlpT.int, eCG.main, default=1 )
+	LBProcNode.MHLP.createAtt( 'childrenNumberRand', 'cnr', eHlpT.int, eCG.main, default=3 )
 	LBProcNode.MHLP.createAtt( 'chaosDisplacement', 'cd', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'lengthRand', 'lr', eHlpT.double, eCG.main, default=0.5 )
 
 	# Generation Transfert Factors
-	LBProcNode.MHLP.createAtt( 'transfertTimeBranching', 'ttb', eHlpT.double, eCG.main, default=3.0 )
-	LBProcNode.MHLP.createAtt( 'transfertTimeChaos', 'ttc', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertSkeletonTime', 'tst', eHlpT.double, eCG.main, default=3.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosTime', 'tct', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'transfertChaosFrequency', 'tcf', eHlpT.double, eCG.main, default=2.0 )
 	LBProcNode.MHLP.createAtt( 'transfertChaosVibration', 'tcv', eHlpT.double, eCG.main, default=.6 )
 	LBProcNode.MHLP.createAtt( 'transfertNumChildren', 'tnc', eHlpT.double, eCG.main, default=0.5 )
@@ -1328,7 +1367,7 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'radius', 'r', eHlpT.double, eCG.main, default=.15 )
 	LBProcNode.MHLP.createAtt( 'childLengthAlongBranch', 'clab', eHlpT.ramp, eCG.childLengthAB )
 	LBProcNode.MHLP.createAtt( 'length', 'l', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'intensityAlongPath', 'ir', eHlpT.ramp, eCG.intensityAB )
+	LBProcNode.MHLP.createAtt( 'intensityAlongBranch', 'iab', eHlpT.ramp, eCG.intensityAB )
 	LBProcNode.MHLP.createAtt( 'intensity', 'i', eHlpT.double, eCG.main, default=1.0 )
 
 	# APV Branches Transfert Factors
@@ -1348,15 +1387,15 @@ def nodeInitializer():
 # Root Overrides
 	# Generation Transfert Overrides
 	LBProcNode.MHLP.createAtt( 'timeRootOverride', 'tro', eHlpT.bool, eCG.main, default=False )
-	LBProcNode.MHLP.createAtt( 'transfertTimeChaosRoot', 'ttsrt', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'transfertTimeBranchingRoot', 'ttbrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosTimeRoot', 'tctrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertSkeletonTimeRoot', 'tstrt', eHlpT.double, eCG.main, default=1.0 )
 
-	LBProcNode.MHLP.createAtt( 'chaosDisplacementRootOverride', 'coro', eHlpT.bool, eCG.chaosDisplacementABRoot, default=False )
+	LBProcNode.MHLP.createAtt( 'chaosDisplacementRootOverride', 'coro', eHlpT.bool, eCG.chaosDisplacementABRoot, default=True )
 	LBProcNode.MHLP.createAtt( 'chaosDisplacementAlongBranchRoot', 'orrt', eHlpT.ramp, eCG.chaosDisplacementABRoot )
-	LBProcNode.MHLP.createAtt( 'transfertChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=0.55 )
+	LBProcNode.MHLP.createAtt( 'transfertChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=2.0 )
 
-	LBProcNode.MHLP.createAtt( 'numChildrenRootOverride', 'ncro', eHlpT.bool, eCG.main, default=0 )
+	LBProcNode.MHLP.createAtt( 'childrenNumberRootOverride', 'ncro', eHlpT.bool, eCG.main, default=0 )
 	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRoot', 'tncrt', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRandRoot', 'tncrrt', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'childProbabilityAlongBranchRoot', 'cpabr', eHlpT.ramp, eCG.childProbabilityABRoot )
@@ -1377,7 +1416,7 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'transfertLengthRoot', 'tlro', eHlpT.double, eCG.main, default=1.0 )
 	
 	LBProcNode.MHLP.createAtt( 'intensityRootOverride', 'iro', eHlpT.bool, eCG.intensityABRoot, default=True )
-	LBProcNode.MHLP.createAtt( 'intensityAlongPathRoot', 'iapr', eHlpT.ramp, eCG.intensityABRoot )
+	LBProcNode.MHLP.createAtt( 'intensityAlongBranchRoot', 'iabr', eHlpT.ramp, eCG.intensityABRoot )
 	LBProcNode.MHLP.createAtt( 'transfertIntensityRoot', 'tir', eHlpT.double, eCG.main, default=1.0 )
 
 # OUTPUTS
