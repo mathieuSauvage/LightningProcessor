@@ -1,32 +1,84 @@
 #!/usr/bin/python
 # -*- coding: iso-8859-1 -*-
 
-
 '''
+================================================================================
+* VERSION 1.0
+================================================================================
+* AUTHOR:
+Mathieu Sauvage mathieu@hiddenforest.fr
+================================================================================
+* INTERNET SOURCE:
+================================================================================
+* DESCRIPTION:
+This is the Maya plugin for the lightning Processor
+================================================================================
+* DEPENDENCIES:
+- You need numpy installed in your Maya's Python in order to execute the lightning
+Processor
+- You need pymel installed
+================================================================================
+* USAGE:
+- if you want to put the plugin into the Maya Folder, be sure to move this file and lightningboltProcessor.py together
+- the AEtemplate is embedded in this file, so you don't need to install it
+- load the plugin in Maya, if you didn't move the files in a Maya Folder you can just execute
+pm.loadPlugin('{YOUR LIGHTNING PLUGIN PATH}/mayaLightningPlugin.py')
+- select some curves and execute this in the python script Editor:
 
 import pymel.core as pm
-pm.loadPlugin('/Users/mathieu/Documents/IMPORTANT/Perso/Prog/python/lightningProcessor/mayaLightningPlugin.py')
 
-global proc string curveToLightning( string $elems[] )
-{
-	
+def getProcessorFromMesh( mesh ):
+	inConns = pm.listConnections( 'polySurfaceShape1.inMesh', type='lightningProcessor', s=True, d=False, p=False )
+	if inConns is not None and len(inConns)>0:
+		return inConns[0]
 
-}
+def curvesToLightning( elements ):
+	lightningProcessorNode = None
+	curveShapes = []
 
-lightNode = pm.createNode('lightningbolt')
-meshNode = pm.createNode('mesh')
-pm.connectAttr( 'time1.outTime', lightNode+'.time')
-pm.connectAttr( 'curveShape1.worldSpace[0]', lightNode+'.inputCurves[0]')
-pm.connectAttr( lightNode+'.outputMesh', meshNode+'.inMesh')
+	# parsing inputs
+	for e in elements:
+		if pm.nodeType(e)== 'transform':
+			childs = pm.listRelatives(e, s=True)
+			if len(childs)>0 and pm.nodeType(childs[0]) == 'nurbsCurve' :
+				curveShapes.append(childs[0])
+			elif len(childs)>0 and pm.nodeType(childs[0]) == 'mesh' and lightningProcessorNode is None:
+				lightningProcessorNode = getProcessorFromMesh(childs[0])
+		elif pm.nodeType(e) == 'nurbsCurve' :
+			curveShapes.append(e)
+		elif pm.nodeType(e) == 'mesh' and lightningProcessorNode is None:
+			lightningProcessorNode = getProcessorFromMesh(e)
 
-mrVert = pm.createNode('mentalrayVertexColors')
-sh = pm.shadingNode( 'surfaceShader', asShader=True )
-set = pm.sets( renderable=True, noSurfaceShader=True, empty=True)
-pm.connectAttr( sh+'.outColor', set+'.surfaceShader', f=True)
-pm.sets( set, e=True, forceElement=meshNode )
-forceEval = pm.polyEvaluate( meshNode, v=True )
-pm.connectAttr( (meshNode+".colorSet[0].colorName") , (mrVert+".cpvSets[0]") )
-pm.connectAttr( (mrVert+'.outColor'), (sh+".outColor") )
+	if len(curveShapes) < 1:
+		return
+
+	if lightningProcessorNode is None:
+		# create processor and mesh node
+		lightningProcessorNode = pm.createNode('lightningProcessor')
+		meshNode = pm.createNode('mesh')
+		pm.connectAttr( 'time1.outTime', lightningProcessorNode+'.time')
+		pm.connectAttr( lightningProcessorNode+'.outputMesh', meshNode+'.inMesh')
+		
+		# create shader and apply to it
+		mrVert = pm.createNode('mentalrayVertexColors')
+		sh = pm.shadingNode( 'surfaceShader', asShader=True )
+		set = pm.sets( renderable=True, noSurfaceShader=True, empty=True)
+		pm.connectAttr( sh+'.outColor', set+'.surfaceShader', f=True)
+		pm.sets( set, e=True, forceElement=meshNode )
+		forceEval = pm.polyEvaluate( meshNode, v=True )
+		pm.connectAttr( (meshNode+".colorSet[0].colorName") , (mrVert+".cpvSets[0]") )
+		pm.connectAttr( (mrVert+'.outColor'), (sh+".outColor") )
+
+	for cs in curveShapes:
+		pm.connectAttr( cs+'.worldSpace[0]', lightningProcessorNode+'.inputCurves', nextAvailable=True)
+
+	return lightningProcessorNode
+
+curvesToLightning( pm.ls(sl=True) )
+
+================================================================================
+* TODO:
+================================================================================
 '''
 
 import sys
@@ -94,7 +146,6 @@ class computeGroup:
 		needCompute = False
 		for attOut in self.OUTS:
 			if plug == attOut.mObject:
-				#sys.stderr.write("plug "+str(plug.name())+" is called for compute\n")
 				needCompute = True
 				break
 		if needCompute:
@@ -105,8 +156,6 @@ class computeGroup:
 	def setClean( self, data ):
 		for attOut in self.OUTS:
 			data.setClean( attOut.mObject )
-		#for attOut in self.OUTS:
-			#sys.stderr.write(" plug out "+attOut.name+" clean "+str(data.isClean( attOut.mObject ))+"\n")
 
 eHlpT = enum('double', 'int', 'bool', 'time', 'curve', 'mesh', 'ramp', 'maxType')
 aHlpMayaTypes = [ OpenMaya.MFnNumericData.kDouble, OpenMaya.MFnNumericData.kInt, OpenMaya.MFnNumericData.kBoolean, OpenMaya.MFnUnitAttribute.kTime, OpenMaya.MFnData.kNurbsCurve, OpenMaya.MFnData.kMesh, '' ]
@@ -127,7 +176,7 @@ class MayaAttHelper:
 		self.attributes = None
 		self.nodeClass = None
 
-	def createAtt( self, name, shortName, type, computeGpIds, isInput=True, default=None, addAttr=True, isArray=False, isCached=True, discBehavior=eHlpDiscBehavior.nothing ):
+	def createAtt( self, name, shortName, type, computeGpIds, isInput=True, default=None, addAttr=True, isArray=False, indexMatters=True, isCached=True, discBehavior=eHlpDiscBehavior.nothing ):
 		attIndex = len(self.attributes)
 		sys.stderr.write('creating attribute '+name+'\n')
 
@@ -162,11 +211,14 @@ class MayaAttHelper:
 		if type != eHlpT.ramp :
 			fn.setKeyable(isInput)
 			fn.setWritable(isInput)
+			fn.setReadable(not isInput)
 			fn.setArray(isArray)
 			if isArray and not isInput:
 				raise MAH_msCommandException('Output Array attribute are not supported')
 			fn.setCached(isCached)
 			fn.setDisconnectBehavior( aHlpMayaDiscBehavior[discBehavior] )
+			if isArray :
+				fn.setIndexMatters(indexMatters)
 
 		att = attDef(attIndex, mObject, name, shortName, type,  addAttr, isInput,isArray )
 		
@@ -207,7 +259,6 @@ class MayaAttHelper:
 			for attIn in globalInList :
 				sys.stderr.write(attIn.name+" affect "+attOut.name+"\n")
 				self.nodeClass.attributeAffects( attIn.mObject, attOut.mObject )
-		#globalInList = set().union( globalInList , computeGp.OUTS )
 		return globalInList
 
 	def finalizeAttributeInitialization( self ):
@@ -445,7 +496,7 @@ def getPointListFromCurve( numPoints, fnCurve, lengthScale):
 
 class LBProcNode(OpenMayaMPx.MPxNode):
 	#----------------------------------------------------------------------------
-	##AEtemplate proc
+	# AEtemplate proc embedded in the plugin
 	mel.eval('''
 
 proc string localizedAttrName( string $name ) {
@@ -1325,7 +1376,7 @@ def nodeCreator():
 def nodeInitializer():
 	LBProcNode.MHLP = MayaAttHelper(LBProcNode, eCG.max )
 
-	LBProcNode.MHLP.createAtt( 'inputCurves', 'ic', eHlpT.curve, eCG.main, isArray=True, isCached=True, discBehavior=eHlpDiscBehavior.delete )
+	LBProcNode.MHLP.createAtt( 'inputCurves', 'ic', eHlpT.curve, eCG.main, isArray=True, indexMatters=False, discBehavior=eHlpDiscBehavior.delete )
 
 # Global Values
 	LBProcNode.MHLP.createAtt( 'detail', 'det', eHlpT.int, eCG.detail, default=6 )
