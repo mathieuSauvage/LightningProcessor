@@ -78,6 +78,7 @@ curvesToLightning( pm.ls(sl=True) )
 
 ================================================================================
 * TODO:
+- Modify the curve length behavior so there is one for every curve
 ================================================================================
 '''
 
@@ -376,7 +377,7 @@ class MLG_msCommandException(Exception):
         return self.message
 
 # Compute groups used by lightning Node
-eCG = enum( 'main', 'detail',
+eCG = enum( 'main', 'detail', 'tubeSides',
 			'radiusAB', 'childLengthAB', 'intensityAB', 'chaosDisplacementAB', 'elevationAB', 'elevationRandAB', 'childProbabilityAB',
 			'chaosDisplacementABRoot', 'elevationABRoot', 'elevationRandABRoot', 'radiusABRoot', 'childLengthABRoot', 'intensityABRoot', 'childProbabilityABRoot',
 			'max' )
@@ -491,7 +492,7 @@ def getPointListFromCurve( numPoints, fnCurve, lengthScale):
 		fnCurve.getPointAtParam(param, pt)
 		res.append( [pt.x,pt.y,pt.z] )
 		param += step
-	return res, lengthScale*fnCurve.length()
+	return res#, lengthScale*fnCurve.length()
 
 
 class LBProcNode(OpenMayaMPx.MPxNode):
@@ -1112,6 +1113,11 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			detailValue = acc.get(LBProcNode.detailIndex)
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.detail, detailValue ) # ***** initialisation of the sizes of arrays in the Processor (all Along Path arrays depend on detail)
 			acc.setClean(eCG.detail, data)
+	# -- Compute Tube Sides
+		if acc.needCompute( eCG.tubeSides, plug ):
+			tubeSidesValue = acc.get(LBProcNode.tubeSidesIndex)
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.tubeSides, tubeSidesValue )
+			acc.setClean(eCG.tubeSides, data)
 	# -- Compute Along Branch Ramp : Radius
 		elif acc.needCompute( eCG.radiusAB, plug ):
 			RadiusABRamp = acc.get(LBProcNode.radiusAlongBranchIndex)	
@@ -1219,7 +1225,6 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 		#-------- Read All the attributes from plugs
 			# global values
 			timeValue = acc.get( LBProcNode.timeIndex)
-			tubeSidesValue = acc.get( LBProcNode.tubeSidesIndex)
 			maxGenerationValue = acc.get( LBProcNode.maxGenerationIndex)
 			vibrationFreqFactorValue = acc.get( LBProcNode.vibrationFreqFactorIndex)
 			secondaryChaosFreqFactorValue = acc.get( LBProcNode.secondaryChaosFreqFactorIndex )
@@ -1233,7 +1238,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# Along Branch dependent values
 			radiusValue = acc.get( LBProcNode.radiusIndex)
 			intensityValue = acc.get( LBProcNode.intensityIndex)
-			childLengthValue = acc.get( LBProcNode.lengthIndex)
+			lengthValue = acc.get( LBProcNode.lengthIndex)
 
 			# Generation dependent values
 			chaosFrequencyValue = acc.get( LBProcNode.chaosFrequencyIndex)
@@ -1288,7 +1293,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# load the list of points from the curve into the processor
 			for c in tempCurves:
 				fnNurbs = OpenMaya.MFnNurbsCurve( c )
-				pointList, cvLength = getPointListFromCurve( self.LP.maxPoints, fnNurbs, childLengthValue )
+				pointList = getPointListFromCurve( self.LP.maxPoints, fnNurbs, lengthValue )
 				# load the list of points from the curve into the processor
 				self.LP.addSeedPointList(pointList)
 
@@ -1296,7 +1301,6 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.time, timeValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.maxGeneration, maxGenerationValue )
-			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.tubeSide, tubeSidesValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.vibrationFreqFactor, vibrationFreqFactorValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedChaos, seedChaosValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedSkeleton, seedSkeletonValue )
@@ -1309,7 +1313,7 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# load the Along Path Values inputs of the node into the processor			
 			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.radius, radiusValue )
 			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.intensity, intensityValue )
-			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.length, cvLength )
+			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.length, lengthValue )
 			# the corresponding transfert values
 			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.radius, transfertRadiusValue, transfertRadiusRootValue )
 			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.intensity, transfertIntensityValue, transfertIntensityRootValue )
@@ -1380,9 +1384,9 @@ def nodeInitializer():
 
 # Global Values
 	LBProcNode.MHLP.createAtt( 'detail', 'det', eHlpT.int, eCG.detail, default=6 )
+	LBProcNode.MHLP.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.tubeSides, default=4 )
 
 	LBProcNode.MHLP.createAtt( 'time', 't', eHlpT.time, eCG.main, default=0.0 )
-	LBProcNode.MHLP.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.main, default=4 )
 	LBProcNode.MHLP.createAtt( 'maxGeneration', 'mg', eHlpT.int, eCG.main, default=3 )
 	LBProcNode.MHLP.createAtt( 'seedChaos', 'sc', eHlpT.int, eCG.main, default=0 )
 	LBProcNode.MHLP.createAtt( 'seedSkeleton', 'ss', eHlpT.int, eCG.main, default=0 )
@@ -1490,7 +1494,7 @@ def nodeInitializer():
 	LBProcNode.MHLP.addGroupDependencies( eCG.elevationRandABRoot, [eCG.detail] )
 	LBProcNode.MHLP.addGroupDependencies( eCG.childProbabilityABRoot, [eCG.detail] )
 	
-	LBProcNode.MHLP.addGroupDependencies( eCG.main, [ eCG.radiusAB, eCG.childLengthAB, eCG.intensityAB, eCG.chaosDisplacementAB, eCG.elevationAB, eCG.elevationRandAB, eCG.childProbabilityAB, eCG.radiusABRoot, eCG.childLengthABRoot, eCG.intensityABRoot, eCG.chaosDisplacementABRoot, eCG.elevationABRoot, eCG.elevationRandABRoot, eCG.childProbabilityABRoot ] )
+	LBProcNode.MHLP.addGroupDependencies( eCG.main, [ eCG.tubeSides, eCG.radiusAB, eCG.childLengthAB, eCG.intensityAB, eCG.chaosDisplacementAB, eCG.elevationAB, eCG.elevationRandAB, eCG.childProbabilityAB, eCG.radiusABRoot, eCG.childLengthABRoot, eCG.intensityABRoot, eCG.chaosDisplacementABRoot, eCG.elevationABRoot, eCG.elevationRandABRoot, eCG.childProbabilityABRoot ] )
 
 # Adding attributes, generating affects etc...
 	LBProcNode.MHLP.finalizeAttributeInitialization()
