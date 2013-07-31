@@ -78,7 +78,6 @@ curvesToLightning( pm.ls(sl=True) )
 
 ================================================================================
 * TODO:
-- Modify the curve length behavior so there is one for every curve
 ================================================================================
 '''
 
@@ -87,8 +86,9 @@ import maya.OpenMaya as OpenMaya
 import maya.OpenMayaMPx as OpenMayaMPx
 import maya.mel as mel
 
-
-#------------------- Here is the Helper Class to make to process of creating, accessing and setting the influence of attributes less tedious
+#-------------------------------------------------------------------------------
+# Here is the Helper Class to make to process of creating, accessing and setting
+# the influence of attributes less tedious
 
 def enum(*sequential, **named):
 	enums = dict(zip(sequential, range(len(sequential))), **named)
@@ -309,6 +309,9 @@ class MayaAttHelper:
 		raise MAH_msCommandException('type not handled in getAttValueOrHdl!')
 
 	def getAttValueOrHdl( self, attId, thisNode, data ):
+		if type(attId) != int:
+			raise MAH_msCommandException('getAttValueOrHdl an take attribute Index as parameter')
+
 		attDef = self.attributes[attId]
 
 		if not attDef.isInput:
@@ -360,8 +363,8 @@ class ATTAccessor:
 		if boolVal:
 			return self.get( att )
 
-#----------------------------------------- END Helper classes 
-#######################################################
+#  END Helper classes
+#------------------------------------------------------------------------------- 
 
 import numpy as np
 import math
@@ -720,11 +723,14 @@ global proc AElightningProcessorTemplate( string $nodeName )
 
 		editorTemplate -beginLayout "System parameters" -collapse 1;
 			editorTemplate -addControl "time";
+			editorTemplate -callCustom "LGHTAETimeAccumulateLayout" "LGHTAETimeAccumulateLayout_Replace" "doAccumulateTime" "startTimeAccumulation";
 			editorTemplate -addControl "maxGeneration";
 			editorTemplate -addControl "seedChaos";
 			editorTemplate -addControl "seedSkeleton";
 			editorTemplate -addControl "tubeSides";
 			editorTemplate -addControl "detail";
+			editorTemplate -s "doAccumulateTimeValue";
+			editorTemplate -s "startTimeAccumulation";
 		editorTemplate -endLayout;
 		
 		editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
@@ -956,6 +962,33 @@ global proc LGHTAELineTransfertAttribute_Replace( string $attS )
 {
 	string $att = attName($attS);
 	connectControl ($att+"_fldGrp") $attS;	
+}
+
+global proc LGHTAETimeAccumulateLayout ( string $att1S, string $att2S )
+{
+	string $att1 = attName($att1S);
+	string $att2 = attName($att2S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 4 -cw4 130 70 140 60;
+	$name1 = `attributeName -nice $att1S`;
+	text -label $name1 -align "left";
+	checkBox -label "" ($att1+"_chkBx");
+	$name2 = `attributeName -nice $att2S`;
+	text -label $name2 -align "left";
+	floatField -w 50 ($att2+"_fldGrp");
+	setParent ..;
+	setParent ..;
+
+	LGHTAETimeAccumulateLayout_Replace( $att1S, $att2S );
+}
+
+global proc LGHTAETimeAccumulateLayout_Replace ( string $att1S, string $att2S )
+{
+	string $att1 = attName($att1S);
+	string $att2 = attName($att2S);
+	connectControl ($att1+"_chkBx") $att1S;
+	connectControl ($att2+"_fldGrp") $att2S;
 }
 
 global proc string attName( string $att )
@@ -1225,6 +1258,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 		#-------- Read All the attributes from plugs
 			# global values
 			timeValue = acc.get( LBProcNode.timeIndex)
+			doAccumulateTimeValue = acc.get(LBProcNode.doAccumulateTimeIndex)
+			startTimeAccumulationValue = acc.get(LBProcNode.startTimeAccumulationIndex)
 			maxGenerationValue = acc.get( LBProcNode.maxGenerationIndex)
 			vibrationFreqFactorValue = acc.get( LBProcNode.vibrationFreqFactorIndex)
 			secondaryChaosFreqFactorValue = acc.get( LBProcNode.secondaryChaosFreqFactorIndex )
@@ -1300,6 +1335,8 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 			# global values
 			
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.time, timeValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.doAccumulateTime, doAccumulateTimeValue )
+			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.startTimeAccumulation, startTimeAccumulationValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.maxGeneration, maxGenerationValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.vibrationFreqFactor, vibrationFreqFactorValue )
 			self.LP.setGlobalValue( LBProcNode.LM.eGLOBAL.seedChaos, seedChaosValue )
@@ -1387,6 +1424,9 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'tubeSides', 'ts', eHlpT.int, eCG.tubeSides, default=4 )
 
 	LBProcNode.MHLP.createAtt( 'time', 't', eHlpT.time, eCG.main, default=0.0 )
+	LBProcNode.MHLP.createAtt( 'doAccumulateTime', 'dat', eHlpT.bool, eCG.main, default=False )
+	LBProcNode.MHLP.createAtt( 'startTimeAccumulation', 'sta', eHlpT.time, eCG.main, default=1.0 )
+
 	LBProcNode.MHLP.createAtt( 'maxGeneration', 'mg', eHlpT.int, eCG.main, default=3 )
 	LBProcNode.MHLP.createAtt( 'seedChaos', 'sc', eHlpT.int, eCG.main, default=0 )
 	LBProcNode.MHLP.createAtt( 'seedSkeleton', 'ss', eHlpT.int, eCG.main, default=0 )
