@@ -18,9 +18,9 @@ a python code as efficient as possible
 * USAGE:
 ================================================================================
 * TODO:
-- implement the time accumulator
 - finish the Ring lightning
-- generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch or maybe not)
+- Make a noise function that take an Array of Array of permutationTable so we can get rid of the loop
+- generate full rotation matrix instead of just vector on sphere ( so we can transmit the frame and we don't need to calculate the start Up for every branch ( maybe it will not be much more efficient )
 ================================================================================
 '''
 
@@ -704,7 +704,7 @@ class lightningBoltProcessor:
 		return self.numStartSeedBranch, startSeedPath, dirVectors,  startSeedAPVMult, startSeedBranchSpeValues
 
 
-	def generate( self, time, timesAccumulator, batch, APBranchV, APSpeV, APBranchTransfert, GenValues, GenTransfert, isLooping, doGenerateChilds ):
+	def generate( self, time, timesAccumulator, batch, APBranchV, APSpeV, APBranchTransfert, GenValues, isLooping, doGenerateChilds ):
 		epsilon = 0.00001
 
 		# unpack
@@ -985,9 +985,6 @@ class lightningBoltProcessor:
 
 			seedPathChilds += startPoints[:,np.newaxis]*self._onesPathStep[:,np.newaxis]
 
-			# Apply the transfert to the Generation Values
-			GenValues *= GenTransfert # transfert Values multiply
-
 			#sys.stderr.write('seedPathChilds1'+str(seedPathChilds[1]) +'\n' )
 			#sys.stderr.write('APBranchMultsChilds'+str(APBranchMultsChilds) +'\n' )
 			childsBatch = ( totalChildNumber, seedPathChilds , unitDirChilds,  APBranchMultsChilds, SPEBRValuesChilds )
@@ -1002,14 +999,14 @@ class lightningBoltProcessor:
 
 		# --- get the first datas (seedPath, attributes, etc... ) to process 
 		batch = self.generateInitialBatch()
+
+		GenValues =  self.GEN.copy() # Per generation Values, they are going to be modified every new generation so we do a copy
 		
 		APBranch = self.APBR_ROOT
 		APBranchTransfert = self.APBRTransfert_ROOT
 		APSpe = self.APSPE_ROOT
 		GenTransfert = self.GENTransfert_ROOT
 		
-		GenValues =  self.GEN.copy() # Per generation Values are modified by a transfert
-
 		self.timer.start()
 
 		# The result returned will be points in the form of a huge list of coordinate, there will be 2 lists to separate ring and non ring lightning
@@ -1020,8 +1017,8 @@ class lightningBoltProcessor:
 		isLooping = False
 		resultIntensities = []
 
-		doAccum = False
-		startTime = 10.0
+		doAccum = self.GLOBALS[eGLOBAL.doAccumulateTime]
+		startTime = self.GLOBALS[eGLOBAL.startTimeAccumulation]
 
 		time = self.GLOBALS[eGLOBAL.time]
 		if doAccum:
@@ -1034,7 +1031,10 @@ class lightningBoltProcessor:
 		self.previousTime = self.GLOBALS[eGLOBAL.time]
 
 		while batch is not None:
-			outFrames, outIntensities, childBatch = self.generate( time, self.timesAccumulator[currentGeneration,:], batch, APBranch, APSpe, APBranchTransfert, GenValues, GenTransfert, isLooping, currentGeneration<self.GLOBALS[eGLOBAL.maxGeneration])
+			outFrames, outIntensities, childBatch = self.generate( time, self.timesAccumulator[currentGeneration,:], batch, APBranch, APSpe, APBranchTransfert, GenValues, isLooping, currentGeneration<self.GLOBALS[eGLOBAL.maxGeneration])
+
+			# Apply the transfert to the Generation Values (it's per generation so do it here)
+			GenValues *= GenTransfert # transfert Values multiply
 
 			if isLooping :
 				resultLoopingFrames.append(outFrames.reshape(-1,4,4))
