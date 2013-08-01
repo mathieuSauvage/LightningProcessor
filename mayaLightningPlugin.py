@@ -366,143 +366,11 @@ class ATTAccessor:
 #  END Helper classes
 #------------------------------------------------------------------------------- 
 
-import numpy as np
-import math
 
-kPluginNodeName = "lightningProcessor"
-kPluginNodeId = OpenMaya.MTypeId(0x8700B)
-
-class MLG_msCommandException(Exception):
-    def __init__(self,message):
-        self.message = '[MLG] '+message
-    
-    def __str__(self):
-        return self.message
-
-# Compute groups used by lightning Node
-eCG = enum( 'main', 'detail', 'tubeSides',
-			'radiusAB', 'childLengthAB', 'intensityAB', 'chaosDisplacementAB', 'elevationAB', 'elevationRandAB', 'childProbabilityAB',
-			'chaosDisplacementABRoot', 'elevationABRoot', 'elevationRandABRoot', 'radiusABRoot', 'childLengthABRoot', 'intensityABRoot', 'childProbabilityABRoot',
-			'max' )
-
-# Function used to convert the Processor output into a Maya mesh structure
-def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, resultIntensityColors, branchMaxPoints, tubeSide):
-	
-	facesConnect = [ ((id/2+1)%2 * ( ( id%4 + id/4 )%tubeSide) + (id/2)%2 *   (( (( 3-id%4 + id/4 )  )%tubeSide) + tubeSide)) + ring*tubeSide + branchNum*tubeSide*branchMaxPoints for branchNum in range(numLightningBranch) for ring in range(branchMaxPoints-1) for id in range(tubeSide*4) ]
-	
-	facesCount = [4]*(tubeSide*(branchMaxPoints-1)*numLightningBranch)
-
-	numVertices = len(resultPoints)/4
-	numFaces = len(facesCount)
-
-	scrUtil = OpenMaya.MScriptUtil()
-	scrUtil.createFromList( resultPoints, len(resultPoints))
-	Mpoints = OpenMaya.MFloatPointArray( scrUtil.asDouble4Ptr(), numVertices)
-
-	scrUtil.createFromList(facesConnect, len(facesConnect))
-	MfaceConnects = OpenMaya.MIntArray( scrUtil.asIntPtr() , len(facesConnect))
-
-	scrUtil.createFromList(facesCount, len(facesCount))
-	MfacesCount = OpenMaya.MIntArray( scrUtil.asIntPtr(), numFaces)
-	
-	dataCreator = OpenMaya.MFnMeshData()
-	outData = dataCreator.create()
-	meshFn = OpenMaya.MFnMesh()
-
-	mObj = meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
-
-# vertexColors
-	scrUtil.createFromList( resultIntensityColors, len(resultIntensityColors))
-	MColors = OpenMaya.MColorArray( scrUtil.asDouble4Ptr(), numVertices )
-
-	scrUtil.createFromList( range(numVertices) , numVertices )
-	MVertexIds = OpenMaya.MIntArray( scrUtil.asIntPtr(), numVertices )
-
-	name = 'lightningIntensity'
-	fName = meshFn.createColorSetDataMesh(name)
-	meshFn.setVertexColors( MColors, MVertexIds )
-	
-	return outData
-
-def loadGeneralLightningScript():
-	# here we load also the processor python script wich should be in the same folder as this plugin
-	# see http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin
-	import inspect, os
-	currentPluginPath = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-	sys.path.append(currentPluginPath)
-	if sys.modules.has_key('lightningboltProcessor') :
-		del(sys.modules['lightningboltProcessor'])
-		print 'module "lightningboltProcessor" deleted'
-	mainLightningModule = __import__( 'lightningboltProcessor' )
-	print 'module "lightningboltProcessor" loaded'
-
-	return mainLightningModule
-
-def fillArrayFromRampAtt( array, ramp, clampValues=None ):
-	inc = 1.0/(array.size-1)
-	param = 0.0
-	valAt_util = OpenMaya.MScriptUtil()
-	valAt_util.createFromDouble(1.0)
-	valAtPtr = valAt_util.asFloatPtr()
-	for i in range(array.size):
-		ramp.getValueAtPosition(param,valAtPtr)
-
-		if clampValues is None:
-			array[i] = valAt_util.getFloat(valAtPtr)
-		else:
-			minv, maxv = clampValues
-			array[i] = min ( maxv, max(valAt_util.getFloat(valAtPtr),minv) )
-		param=param+inc	
-
-def setupABVFromRamp( arrays, ramp, clampValues=None):
-	array, arrayRoot = arrays
-	if array.size <1 :
-		raise MLG_msCommandException('array size must be more than 1')
-	fillArrayFromRampAtt( array, ramp, clampValues)
-	#sys.stderr.write('array '+str(array)+'\n')
-
-def setupABRootVFromRamp( arrays, ramp, clampValues=None):
-	array, arrayRoot = arrays
-	if arrayRoot.size <1 :
-		raise MLG_msCommandException('array size must be more than 1')
-	if ramp is None :
-		arrayRoot[:] = array # COPY Normal -> Root
-		return		
-	fillArrayFromRampAtt( arrayRoot, ramp, clampValues)
-
-
-def getPointListFromCurve( numPoints, fnCurve, lengthScale):
-	lengthScale = max(0.0, min(1.0,lengthScale) ) # clamp lengthScale to avoid query parameter outside [0,1]
-
-	startTemp = OpenMaya.MScriptUtil()
-	startTemp.createFromDouble(0.0)
-	startPtr = startTemp.asDoublePtr()
-
-	endTemp = OpenMaya.MScriptUtil()
-	endTemp.createFromDouble(0.0)
-	endPtr = endTemp.asDoublePtr()
-
-	fnCurve.getKnotDomain(startPtr, endPtr)
-	paramStart = startTemp.getDouble(startPtr)
-	paramEnd = endTemp.getDouble(endPtr)-0.000001
-	
-	step = lengthScale*(paramEnd - paramStart)/(numPoints-1)
-	
-	pt=OpenMaya.MPoint()
-	param=paramStart
-	res = []
-	for i in range(numPoints):
-		fnCurve.getPointAtParam(param, pt)
-		res.append( [pt.x,pt.y,pt.z] )
-		param += step
-	return res#, lengthScale*fnCurve.length()
-
-
-class LBProcNode(OpenMayaMPx.MPxNode):
-	#----------------------------------------------------------------------------
-	# AEtemplate proc embedded in the plugin
+#----------------------------------------------------------------------------
+# AEtemplate proc embedded in the plugin
+def loadAETemplate():
 	mel.eval('''
-
 proc string localizedAttrName( string $name ) {
 	if( $name == "Selected Color" ) {
 		return (uiRes("m_AEaddRampControl.kSelClr"));
@@ -1124,8 +992,144 @@ global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $at
 }
 
 			''')
-	#----------------------------------------------------------------------------
+#  END AE Template
+#------------------------------------------------------------------------------- 
 
+import numpy as np
+import inspect, os
+import math
+
+kPluginNodeName = "lightningProcessor"
+kPluginNodeId = OpenMaya.MTypeId(0x8700B)
+
+class MLG_msCommandException(Exception):
+    def __init__(self,message):
+        self.message = '[MLG] '+message
+    
+    def __str__(self):
+        return self.message
+
+# Compute groups used by lightning Node
+eCG = enum( 'main', 'detail', 'tubeSides',
+			'radiusAB', 'childLengthAB', 'intensityAB', 'chaosDisplacementAB', 'elevationAB', 'elevationRandAB', 'childProbabilityAB',
+			'chaosDisplacementABRoot', 'elevationABRoot', 'elevationRandABRoot', 'radiusABRoot', 'childLengthABRoot', 'intensityABRoot', 'childProbabilityABRoot',
+			'max' )
+
+# Function used to convert the Processor output into a Maya mesh structure
+def mayaLightningMesher(resultLoopingPoints, numLoopingLightningBranch, resultPoints, numLightningBranch, resultIntensityColors, branchMaxPoints, tubeSide):
+	
+	facesConnect = [ ((id/2+1)%2 * ( ( id%4 + id/4 )%tubeSide) + (id/2)%2 *   (( (( 3-id%4 + id/4 )  )%tubeSide) + tubeSide)) + ring*tubeSide + branchNum*tubeSide*branchMaxPoints for branchNum in range(numLightningBranch) for ring in range(branchMaxPoints-1) for id in range(tubeSide*4) ]
+	
+	facesCount = [4]*(tubeSide*(branchMaxPoints-1)*numLightningBranch)
+
+	numVertices = len(resultPoints)/4
+	numFaces = len(facesCount)
+
+	scrUtil = OpenMaya.MScriptUtil()
+	scrUtil.createFromList( resultPoints, len(resultPoints))
+	Mpoints = OpenMaya.MFloatPointArray( scrUtil.asDouble4Ptr(), numVertices)
+
+	scrUtil.createFromList(facesConnect, len(facesConnect))
+	MfaceConnects = OpenMaya.MIntArray( scrUtil.asIntPtr() , len(facesConnect))
+
+	scrUtil.createFromList(facesCount, len(facesCount))
+	MfacesCount = OpenMaya.MIntArray( scrUtil.asIntPtr(), numFaces)
+	
+	dataCreator = OpenMaya.MFnMeshData()
+	outData = dataCreator.create()
+	meshFn = OpenMaya.MFnMesh()
+
+	mObj = meshFn.create(numVertices, numFaces, Mpoints , MfacesCount, MfaceConnects, outData)
+
+# vertexColors
+	scrUtil.createFromList( resultIntensityColors, len(resultIntensityColors))
+	MColors = OpenMaya.MColorArray( scrUtil.asDouble4Ptr(), numVertices )
+
+	scrUtil.createFromList( range(numVertices) , numVertices )
+	MVertexIds = OpenMaya.MIntArray( scrUtil.asIntPtr(), numVertices )
+
+	name = 'lightningIntensity'
+	fName = meshFn.createColorSetDataMesh(name)
+	meshFn.setVertexColors( MColors, MVertexIds )
+	
+	return outData
+
+def loadGeneralLightningScript():
+	# here we load also the processor python script wich should be in the same folder as this plugin
+	# see http://stackoverflow.com/questions/50499/in-python-how-do-i-get-the-path-and-name-of-the-file-that-is-currently-executin
+	currentPluginPath = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+	sys.path.append(currentPluginPath)
+	if sys.modules.has_key('lightningboltProcessor') :
+		del(sys.modules['lightningboltProcessor'])
+		print 'module "lightningboltProcessor" deleted'
+	mainLightningModule = __import__( 'lightningboltProcessor' )
+	print 'module "lightningboltProcessor" loaded'
+
+	return mainLightningModule
+
+def fillArrayFromRampAtt( array, ramp, clampValues=None ):
+	inc = 1.0/(array.size-1)
+	param = 0.0
+	valAt_util = OpenMaya.MScriptUtil()
+	valAt_util.createFromDouble(1.0)
+	valAtPtr = valAt_util.asFloatPtr()
+	for i in range(array.size):
+		ramp.getValueAtPosition(param,valAtPtr)
+
+		if clampValues is None:
+			array[i] = valAt_util.getFloat(valAtPtr)
+		else:
+			minv, maxv = clampValues
+			array[i] = min ( maxv, max(valAt_util.getFloat(valAtPtr),minv) )
+		param=param+inc	
+
+def setupABVFromRamp( arrays, ramp, clampValues=None):
+	array, arrayRoot = arrays
+	if array.size <1 :
+		raise MLG_msCommandException('array size must be more than 1')
+	fillArrayFromRampAtt( array, ramp, clampValues)
+	#sys.stderr.write('array '+str(array)+'\n')
+
+def setupABRootVFromRamp( arrays, ramp, clampValues=None):
+	array, arrayRoot = arrays
+	if arrayRoot.size <1 :
+		raise MLG_msCommandException('array size must be more than 1')
+	if ramp is None :
+		arrayRoot[:] = array # COPY Normal -> Root
+		return		
+	fillArrayFromRampAtt( arrayRoot, ramp, clampValues)
+
+
+def getPointListFromCurve( numPoints, fnCurve, lengthScale):
+	lengthScale = max(0.0, min(1.0,lengthScale) ) # clamp lengthScale to avoid query parameter outside [0,1]
+
+	startTemp = OpenMaya.MScriptUtil()
+	startTemp.createFromDouble(0.0)
+	startPtr = startTemp.asDoublePtr()
+
+	endTemp = OpenMaya.MScriptUtil()
+	endTemp.createFromDouble(0.0)
+	endPtr = endTemp.asDoublePtr()
+
+	fnCurve.getKnotDomain(startPtr, endPtr)
+	paramStart = startTemp.getDouble(startPtr)
+	paramEnd = endTemp.getDouble(endPtr)-0.000001
+	
+	step = lengthScale*(paramEnd - paramStart)/(numPoints-1)
+	
+	pt=OpenMaya.MPoint()
+	param=paramStart
+	res = []
+	for i in range(numPoints):
+		fnCurve.getPointAtParam(param, pt)
+		res.append( [pt.x,pt.y,pt.z] )
+		param += step
+	return res#, lengthScale*fnCurve.length()
+
+
+class LBProcNode(OpenMayaMPx.MPxNode):
+
+	#----------------------------------------------------------------------------
 	# let's have the LightningBolt Module here as a static
 	LM = loadGeneralLightningScript()
 
@@ -1546,6 +1550,7 @@ def cleanupClass():
 
 # initialize the script plug-in
 def initializePlugin(mobject):
+	loadAETemplate()
 	mplugin = OpenMayaMPx.MFnPlugin(mobject)
 	try:
 		mplugin.registerNode( kPluginNodeName, kPluginNodeId, nodeCreator, nodeInitializer)
