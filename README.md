@@ -51,7 +51,8 @@ Save it and that should be good, you can start Maya and test numpy inside Maya i
 
 		import numpy as np
 		print np.arange(1,6)  
-there should be no error! then you are done and you can load the plugin, yeah!
+there should be no error!  
+You are done and you can load the plugin, yeah!
 
 ## usage in Maya
 
