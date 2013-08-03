@@ -111,6 +111,6 @@ there should be no error! then you are ok and you can load the plugin
 this script main command is:
 
 		curvesToLightning( list )  
-list can be a list of curve and the command will create a the lightning mesh for all the curves and a shader on that mesh to render the vertex colors.  
-Or list can also be one or more curve **AND** an already created lightning mesh, in this case the curves are added to already created system.
+*list* can be a list of curves and the command will create a the lightning mesh for all the curves and a shader on that mesh to render the vertex colors.  
+Or *list* can also be one or more curves **AND** an already created lightning mesh, in this case the curves are added to already created system.
 
