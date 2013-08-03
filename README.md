@@ -53,6 +53,7 @@ there should be no error! then you are ok and you can load the plugin
 - create one or more curves
 - execute this script in the Python script editor:
 
+```python
 		import pymel.core as pm
 
 		def getProcessorFromMesh( mesh ):
