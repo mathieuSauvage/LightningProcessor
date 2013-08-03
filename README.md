@@ -29,15 +29,15 @@ To test if you have pymel just execute this in the python Script Editor of Maya:
 - **Numpy**  
 you absolutely need to have Numpy installed in your Maya's python. This will work only for Maya 2011 and 2012, Maya 2013's python changed too much and it's a more complicated case (google "numpy for maya 2013" to see all the problems)  
 I am going too explain it, but also [in this blog post](http://animateshmanimate.com/2011/03/30/python-numpy-and-maya-osx-and-windows/) there is a good explanation about how to install numpy in Maya.  
-My way to make numpy work is not too complicated, we are going to force Maya to load python modules installed in the Windows's python.  
-Of course you should have a normal python installation on your computer, the python you can access directly in Windows with the command line. If you don't have any, then install a python 2.6 since this is the python version used by Maya. Then you can test if numpy is already installed in your Windows's python and working by executing:  
+My way to make numpy work is not too complicated, we are going to force Maya to load python modules installed in the windows's python.  
+Of course you should have a normal python installation on your computer, the python you can access directly in windows with the command line. If you don't have any, then install a python 2.6 since this is the python version used by Maya. Then you can test if numpy is already installed in your Windows's python and working by executing:  
 
 		import numpy as np
 		print np.arange(1,6)  
 If there is an error, well, you need to install Numpy.  
 You can download numpy installation from here [http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy](http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy), download this one `numpy-MKL-1.7.1.win-amd64-py2.6.‌exe` (64 bits version for python 2.6) and install it.  
 Once it's installed, test numpy again using python in the Windows command line like before.  
-So now that it should work, we have we want to link this working module into Maya's python. You have to find where is your freshly installed numpy folder, to know it you can execute these python commands in the windows command line :  
+So now that it should work, we want to link this working module into Maya's python. You have to find where is your freshly installed numpy folder, to know that information you can execute these python commands in the windows command line :  
 
 		import numpy as np
 		print np.__file__  
