@@ -3,7 +3,7 @@ I made this in python as a personnal project to improve my python skills and lea
 ## the files
 
 **lightningboltProcessor.py** core function independent from Maya  
-**mayaLightningPlugin.py** the plugin that declare the Maya node and send the proper informations to the processor in lightningboltProcessor.py, this is the file you will load as a plugin or see in the plug-in manager.  
+**mayaLightningPlugin.py** the plugin that declare the Maya node and send the proper informations to the processor in lightningboltProcessor.py, this is the file you will load as a plugin or activate in the plug-in manager.  
 **AElightningProcessorTemplate.mel** AE template script to have a nice display in the Attribute Editor.
 
 ## installing the files
