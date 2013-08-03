@@ -1,10 +1,12 @@
-## the files :
+I made this in python as a personnal project to improve my python skills and learn how to use numpy. It could be optimized more and run even faster in python but that type of plugin should anyway be done in C++ to really have an acceptable speed. For now this is a good proof of concept of my lightning processor, I will make a C++ API plugin later. Also the integration of numpy in the newer version of Maya (2013+) seem to be overtly complicated, so there is no future for this python plugin.
+
+## the files
 
 **lightningboltProcessor.py** core function independant from Maya  
 **mayaLightningPlugin.py** the plugin that declare the Maya node and send the proper informations to the processor in lightningboltProcessor.py, this is the file you will load as a plugin or see in the plug-in manager.  
 **AElightningProcessorTemplate.mel** AE template script to have a nice display in the Attribute Editor.
 
-## installing the files:
+## installing the files
 
 - copy the file **AElightningProcessorTemplate.mel** into the AETemplate folder
 
@@ -18,19 +20,21 @@ But you can also put them anywhere and load the plugin using commands like this:
 ## dependencies
 
 - **Pymel**  
-it's better if pymel is installed and working inside Maya's Python. It's only important for the setup python script to create and connect the node to curves, it's actually not requiered by the Plugin. To test if you have pymel just execute this in the Python Script Editor of Maya:
+it's better if pymel is installed and working inside Maya's python. It's not so important, as I use it only for the setup python script to create and connect the node to curves, it's actually not requiered by the Plugin.  
+To test if you have pymel just execute this in the python Script Editor of Maya:
 
 		import pymel.core as pm
 
 - **Numpy**  
 you absolutely need to have Numpy installed in your Maya's python. This will work only for Maya 2011 and 2012, Maya 2013's python changed too much and it's a more complicated case (google "numpy for maya 2013" to see all the problems)  
+I am going too explain it, but also [in this blog post](http://animateshmanimate.com/2011/03/30/python-numpy-and-maya-osx-and-windows/) there is a good explanation about how to install numpy in Maya.  
 My way to make numpy work is not too complicated, we are going to force Maya to load python modules installed in the Windows's python.  
-Of course you should have a normal python installation on your computer, the python you can access directly in Windows with the command line. If you don't have any, then install a Python 2.6 since this is the Python version used by Maya. Then you can check if numpy is already installed in your Windows's Python and working by executing:  
+Of course you should have a normal python installation on your computer, the python you can access directly in Windows with the command line. If you don't have any, then install a python 2.6 since this is the python version used by Maya. Then you can check if numpy is already installed in your Windows's python and working by executing:  
 
 		import numpy as np
 		print np.arange(1,6)  
 If there is an error, well, you need to install Numpy. You can download numpy installation from here [http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy](http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy), download this one `numpy-MKL-1.7.1.win-amd64-py2.6.‌exe` and install it.  
-Once it is installed, test numpy again using in the Windows command line. Ok so if it works now we have to copy that to Maya's Python. you have to find where is your freshly installed numpy folder, to know it you can execute these commands in the windows command line :  
+Once it's installed, test numpy again using in the Windows command line. Ok so if it works now we have to copy that to Maya's python. you have to find where is your freshly installed numpy folder, to know it you can execute these commands in the windows command line :  
 
 		import numpy as np
 		print np.__file__  
@@ -41,7 +45,7 @@ Now let’s make it work with Maya. Create a file **userSetup.py** (or edit it i
 		import os
 		import sys
 		sys.path.append('{YOUR_PYTHON_LIBRARY_PATH}') # Put the result of what you got with the command before  
-Save it and that should be good, you can start Maya and test numpy inside Maya in the Python Script Editor with:  
+Save it and that should be good, you can start Maya and test numpy inside Maya in the python Script Editor with:  
 
 		import numpy as np
 		print np.arange(1,6)  
@@ -51,7 +55,7 @@ there should be no error! then you are ok and you can load the plugin
 
 - load the plugin. (use the plug-in manager or use the command loadplugin)
 - create one or more curves
-- execute this script in the Python script editor:
+- execute this script in the python script editor:
 
 		import pymel.core as pm
 
@@ -106,6 +110,6 @@ there should be no error! then you are ok and you can load the plugin
 this script main command is:
 
 		curvesToLightning( list )  
-list can be a list of curve and the command will create a the lightning mesh for all the curves and a shader on that mesh to display the vertexColors.
-list can also be one or more curve **and** an already created lightning mesh, in this case the curves are added to already created system.
+list can be a list of curve and the command will create a the lightning mesh for all the curves and a shader on that mesh to render the vertex colors.
+Or list can also be one or more curve **AND** an already created lightning mesh, in this case the curves are added to already created system.
 
