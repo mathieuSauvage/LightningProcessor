@@ -21,7 +21,7 @@ But you can also put them anywhere and load the plugin using commands like this:
 ## dependencies
 
 - **Pymel**  
-it's better if pymel is installed and working inside Maya's python. It's not so important, as I use it only for the setup python script to create and connect the node to curves, it's actually not requiered by the Plugin.  
+it's better if pymel is installed and working inside Maya's python. It's not very important, as I use it only for the setup python script that create and connect the node to curves (the script is in the *usage in Maya* section below), it's actually not requiered by the Plugin itself.  
 To test if you have pymel just execute this in the python Script Editor of Maya:
 
 		import pymel.core as pm
@@ -48,7 +48,7 @@ Now let’s make it work with Maya. Create a file **userSetup.py** (or edit it i
 		import os
 		import sys
 		sys.path.append('{YOUR_PYTHON_LIBRARY_PATH}/')  
-*{YOUR_PYTHON_LIBRARY_PATH} is the result of what you got with the command before*  
+*{YOUR_PYTHON_LIBRARY_PATH} is the result of what you got with the command before, the parent folder of the numpy folder*  
 Save it and that should be good, you can start Maya and test numpy inside Maya in the python Script Editor with:  
 
 		import numpy as np
