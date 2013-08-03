@@ -34,7 +34,8 @@ Of course you should have a normal python installation on your computer, the pyt
 
 		import numpy as np
 		print np.arange(1,6)  
-If there is an error, well, you need to install Numpy. You can download numpy installation from here [http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy](http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy), download this one `numpy-MKL-1.7.1.win-amd64-py2.6.‌exe` and install it.  
+If there is an error, well, you need to install Numpy.  
+You can download numpy installation from here [http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy](http://www.lfd.uci.edu/~gohlke/pythonlibs/#numpy), download this one `numpy-MKL-1.7.1.win-amd64-py2.6.‌exe` (64 bits version for python 2.6) and install it.  
 Once it's installed, test numpy again using python in the Windows command line like before.  
 So now that it should work, we have we want to link this working module into Maya's python. You have to find where is your freshly installed numpy folder, to know it you can execute these python commands in the windows command line :  
 
