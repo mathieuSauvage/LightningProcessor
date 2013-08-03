@@ -104,6 +104,7 @@ there should be no error! then you are ok and you can load the plugin
 			return lightningProcessorNode
 
 		curvesToLightning( pm.ls(sl=True) ) # call with the current selection  
+``
 this script main command is:
 
 		curvesToLightning( list )  
