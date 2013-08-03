@@ -12,10 +12,11 @@ I made this in python as a personnal project to improve my python skills and lea
 
 - you need to keep **lightningboltProcessor.py** and **mayaLightningPlugin.py** together.  
 The best is to copy both of them in the Maya python plugin folder (something like *Documents\maya\\{mayaVersion}\plug-ins* or some of the folder that are defined in the environment variable `MAYA_PLUG_IN_PATH` ). You can now load the plugin inside Maya with the plug-in Manager.
-But you can also put them anywhere and load the plugin using commands like this:
+But you can also put them anywhere and load the plugin using commands like this:  
 		
 		import pymel.core as pm
-		pm.loadPlugin('[PATH]/mayaLightningPlugin.py') # Replace [PATH] with the folder where you put the files
+		pm.loadPlugin('{PATH}/mayaLightningPlugin.py') 
+*Replace {PATH} with the folder where you put the files*
 
 ## dependencies
 
@@ -51,7 +52,7 @@ Save it and that should be good, you can start Maya and test numpy inside Maya i
 		print np.arange(1,6)  
 there should be no error! then you are ok and you can load the plugin
 
-## Maya Usage
+## usage in Maya
 
 - load the plugin. (use the plug-in manager or use the command loadplugin)
 - create one or more curves
