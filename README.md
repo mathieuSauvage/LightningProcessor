@@ -42,12 +42,13 @@ So now that it should work, we want to link this working module into Maya's pyth
 		import numpy as np
 		print np.__file__  
 It will output something like this:  
-*`{YOUR_PYTHON_LIBRARY_PATH}`*`/numpy/__init__.pyc`  
+`{YOUR_PYTHON_LIBRARY_PATH}/numpy/__init__.pyc`  
 Now let’s make it work with Maya. Create a file **userSetup.py** (or edit it if you already have one) in your Maya scripts folder (for windows it’s something like `...\My Documents\maya\versionofmaya\scripts`). Open it and add this:
 
 		import os
 		import sys
-		sys.path.append('{YOUR_PYTHON_LIBRARY_PATH}') # Put the result of what you got with the command before  
+		sys.path.append('{YOUR_PYTHON_LIBRARY_PATH}')  
+*{YOUR_PYTHON_LIBRARY_PATH} is the result of what you got with the command before*
 Save it and that should be good, you can start Maya and test numpy inside Maya in the python Script Editor with:  
 
 		import numpy as np
