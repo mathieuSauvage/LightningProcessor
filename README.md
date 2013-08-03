@@ -48,7 +48,7 @@ Now let’s make it work with Maya. Create a file **userSetup.py** (or edit it i
 		import os
 		import sys
 		sys.path.append('{YOUR_PYTHON_LIBRARY_PATH}')  
-*{YOUR_PYTHON_LIBRARY_PATH} is the result of what you got with the command before*
+*{YOUR_PYTHON_LIBRARY_PATH} is the result of what you got with the command before*  
 Save it and that should be good, you can start Maya and test numpy inside Maya in the python Script Editor with:  
 
 		import numpy as np
