@@ -1,0 +1,620 @@
+
+proc string LGHTAELocalizedAttrName( string $name ) 
+{
+	if( $name == "Selected Color" ) {
+		return (uiRes("m_AEaddRampControl.kSelClr"));
+	} else if( $name == "Selected Position" ) {
+		return (uiRes("m_AEaddRampControl.kSelPos"));
+	} else if( $name == "Selected Value" ) {
+		return (uiRes("m_AEaddRampControl.kSelVal"));
+	} else if( $name == "Interpolation method" ) {
+		return (uiRes("m_AEaddRampControl.kInterpMethod"));
+	}
+}
+
+global proc LGHTAEmakeLargeRamp( string $nodeAttr,
+							int $bound,
+							int $indent,
+							int $staticEntries,
+							int $staticPositions,
+							int $adaptiveScaling )
+//
+//	Description:
+//
+//	$staticEntries - If set to 1, the gradientControl widget will be set to
+//					a fixed number of ramp entries (control points).
+//
+{
+	string $buffer[];
+	tokenize($nodeAttr, ".", $buffer);
+	string $attr = $buffer[1];
+
+	string $rampName = $attr + "Ramp";
+	string $editButton = $attr + "RampEdit";
+	string $scName = $attr +"Scc";
+	string $spName = $attr +"Sp";
+	string $siName = $attr +"Si";
+
+	string $colEntryName =  ($nodeAttr + "[0]." + $attr + "_ColorR");
+	int $isColor = `objExists ($colEntryName)`;
+
+	//setUITemplate -pst attributeEditorTemplate;
+	string $niceN = `attributeName -nice $nodeAttr`;
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	text -label $niceN -align "left";
+
+	// ramp block
+	string $rampForm = `formLayout ($rampName + "Form")`;
+		string $spc	= `attrFieldSliderGrp -label (LGHTAELocalizedAttrName("Selected Position"))
+			-cw 1 123 -annotation (LGHTAELocalizedAttrName("Selected Position")) $spName`;
+		string $scc;
+		if( $isColor ){
+			$scc= `attrColorSliderGrp -label (LGHTAELocalizedAttrName("Selected Color"))
+				-cw 1 123 -cw 2 45 -cw 3 0 -annotation (LGHTAELocalizedAttrName("Selected Color")) -sb 1 $scName`;
+		} else {
+			$scc	= `attrFieldSliderGrp -label (LGHTAELocalizedAttrName("Selected Value"))
+			-cw 1 123 -annotation (LGHTAELocalizedAttrName("Selected Value")) $scName`;
+		}
+		
+		string $interp = `attrEnumOptionMenuGrp -label (uiRes("m_AEaddRampControl.kInterp"))
+			-cw 1 123 -annotation (LGHTAELocalizedAttrName("Interpolation method")) $siName`;
+		string $boundStyle = "etchedIn";
+		if( $bound ){
+			$boundStyle = "in";
+		}
+		string $lmax;
+		if ( $adaptiveScaling ) {
+			$lmax = `text -label "1.0" ($rampName+"LX")`;
+		}
+		$editButton = `button -l ">" -width 23 -c ("editRampAttribute "+$nodeAttr) $editButton`;
+		string $rframe = `frameLayout -bs $boundStyle -lv 0 -cll 0 ($rampForm + "fr")`;
+		string $widgetName = `gradientControl
+								-at $nodeAttr
+								-snc $staticEntries
+								-sp $staticPositions
+								// -w 148 -h 74
+								-w 135 -h 74
+								$rampName`;
+		if ( $adaptiveScaling ) {
+			gradientControl -e -as $adaptiveScaling -ror $adaptiveScaling -ulc $lmax $widgetName;
+		}
+
+		setParent ..;
+		formLayout
+			-edit
+				-attachForm $spc "left"  0
+				-attachNone $spc "right"
+				-attachForm $spc "top" 0
+				-attachNone $spc "bottom"
+
+				-attachForm $scc "left" 0 
+				-attachNone $scc "right"
+				-attachControl $scc "top" 0 $spc
+				-attachNone $scc "bottom"
+
+				-attachForm $interp "left" 0 
+				-attachNone $interp "right"
+				-attachControl $interp "top" 0 $scc
+				-attachNone $interp "bottom"
+
+				-attachControl $rframe "left" 2 $interp
+				-attachNone $rframe "right"
+				-attachForm $rframe "top" 0
+				-attachNone $rframe "bottom"
+
+				-attachForm $editButton "top" 0
+				-attachForm $editButton "bottom" 0
+				-attachControl $editButton "left" 25 $rframe
+				-attachNone $editButton "right"
+				$rampForm;
+
+		if ( $adaptiveScaling ) {
+			formLayout
+				-edit
+					-attachControl $lmax "left" 2 $rframe
+					-attachNone $lmax "right"
+					-attachForm $lmax "top" 0
+					-attachNone $lmax "bottom"
+					$rampForm;
+		}
+	setParent ..;
+	setParent ..;
+
+	// input
+	if(objExists ($nodeAttr +"Input")){
+		string $inLabel;
+		string $labelAttr = `attributeName -nice $nodeAttr`;
+		string $inputVarAnnot = (uiRes("m_AEaddRampControl.kInputVarAnnot"));
+		
+		if( $indent || size( $labelAttr ) < 9 ){
+			string $fmt = (uiRes("m_AEaddRampControl.kInputFmt"));
+			$inLabel = `format -s $labelAttr $fmt`;
+		} else {
+			$inLabel = (uiRes("m_AEaddRampControl.kInputShort"));
+		}
+		if( $indent ){
+			attrEnumOptionMenuGrp -l $inLabel
+				-ann $inputVarAnnot
+				-cw 1 204
+				-at ($nodeAttr + "Input") ($rampName + "Input");
+		} else {
+			attrEnumOptionMenuGrp -l $inLabel
+				-ann $inputVarAnnot
+				-cw 1 123
+				-at ($nodeAttr + "Input") ($rampName + "Input");
+		}
+		
+	}
+
+	// inputBias
+	if(  objExists ($nodeAttr +"InputBias") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputBias")) -cw4 123 81 130	25 
+				-at ($nodeAttr +"InputBias") ($rampName + "InputBias");
+	}
+
+	// inputScale
+	if(  objExists ($nodeAttr +"InputScale") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputScale")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputScale") ($rampName + "InputScale");
+	}
+	// inputMax
+	if(  objExists ($nodeAttr +"InputMax") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputMax")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputMax") ($rampName + "InputMax");
+	}
+	// inputOffset
+	if(  objExists ($nodeAttr +"InputOffset") ){
+		attrFieldSliderGrp -label (uiRes("m_AEaddRampControl.kInputOffset")) -cw4 123 81 130 25	
+				-at ($nodeAttr +"InputOffset") ($rampName + "InputOffset");
+	}
+
+	// tell the port about the controls
+	gradientControl -e -scc $scc $widgetName;
+	gradientControl -e -spc $spc $widgetName;
+	gradientControl -e -sic $interp $widgetName;
+
+}
+
+global proc LGHTAERampControl(string $nodeAttr)
+{
+	LGHTAEmakeLargeRamp( $nodeAttr,1,1,0,0, 0 );
+}
+
+global proc LGHTAERampControl_Replace (string $nodeAttr)
+{
+	string $buffer[];
+	tokenize($nodeAttr, ".", $buffer);
+	string $attr = $buffer[1];
+
+	string $rampName = $attr + "Ramp";
+	string $editButton = $attr + "RampEdit";
+
+	gradientControl -edit -at $nodeAttr $rampName;
+	if( `button -exists $editButton` ){	
+		button -edit -c ("editRampAttribute "+$nodeAttr) $editButton;
+	}
+	if( `objExists ($nodeAttr +"Input")` ){
+		attrEnumOptionMenuGrp -edit -at ($nodeAttr + "Input") ($rampName + "Input");
+	}
+	if( `objExists ($nodeAttr +"InputScale")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputScale") ($rampName + "InputScale");
+	}
+	if( `objExists ($nodeAttr +"InputBias")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputBias") ($rampName + "InputBias");
+	}
+	if( `objExists ($nodeAttr +"InputMax")` ){
+		attrFieldSliderGrp -edit -at ($nodeAttr + "InputMax") ($rampName + "InputMax");
+	}
+	if( `objExists ($nodeAttr +"InputOffset")` ){
+		if (`attrFieldSliderGrp -query -exists ($rampName + "InputOffset")`) {
+			attrFieldSliderGrp -edit -at ($nodeAttr + "InputOffset") ($rampName + "InputOffset");
+		}
+	}
+}
+
+global proc AElightningProcessorTemplate( string $nodeName )
+{
+	AEswatchDisplay  $nodeName;
+	editorTemplate -beginScrollLayout;
+
+		editorTemplate -beginLayout "System parameters" -collapse 1;
+			editorTemplate -addControl "time";
+			editorTemplate -callCustom "LGHTAETimeAccumulateLayout" "LGHTAETimeAccumulateLayout_Replace" "doAccumulateTime" "startTimeAccumulation";
+			editorTemplate -addControl "maxGeneration";
+			editorTemplate -addControl "seedChaos";
+			editorTemplate -addControl "seedSkeleton";
+			editorTemplate -addControl "tubeSides";
+			editorTemplate -addControl "detail";
+			editorTemplate -s "doAccumulateTimeValue";
+			editorTemplate -s "startTimeAccumulation";
+		editorTemplate -endLayout;
+		
+		editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosTimeMultiplier" "transfertChaosTime";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "skeletonTimeMultiplier" "transfertSkeletonTime";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transfertChaosTimeRoot" "transfertSkeletonTimeRoot";				
+			editorTemplate -s "chaosTimeMultiplier";
+			editorTemplate -s "vibrationFreqFactor";
+			editorTemplate -s "transfertChaosTime";
+			editorTemplate -s "skeletonTimeMultiplier";
+			editorTemplate -s "transfertSkeletonTime";
+			editorTemplate -s "timeRootOverride";
+			editorTemplate -s "transfertChaosTimeRoot";
+			editorTemplate -s "transfertSkeletonTimeRoot";	
+		editorTemplate -endLayout;
+
+		editorTemplate -beginLayout "⟦ Length Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "length" "transfertLength";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "lengthRand" "transfertLengthRand";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childLengthAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transfertLengthRoot" "childLengthAlongBranchRoot";
+
+			editorTemplate -s "length";
+			editorTemplate -s "transfertLength";
+			editorTemplate -s "lengthRand";
+			editorTemplate -s "transfertLengthRand";
+			editorTemplate -s "childLengthAlongBranch";
+			editorTemplate -s "lengthRootOverride";
+			editorTemplate -s "transfertLengthRoot";
+			editorTemplate -s "childLengthAlongBranchRoot";
+		editorTemplate -endLayout;
+
+		editorTemplate -beginLayout "⟦ Radius Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "radius" "transfertRadius";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "radiusAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutRadius" "LGHTAEOverrideLayoutRadius_Replace" "radiusRootOverride" "transfertRadiusRoot" "radiusAlongBranchRoot";
+			editorTemplate -s "radius";
+			editorTemplate -s "transfertRadius";
+			editorTemplate -s "radiusAlongBranch";
+			editorTemplate -s "radiusRootOverride";
+			editorTemplate -s "transfertRadiusRoot";
+			editorTemplate -s "radiusAlongBranchRoot";
+		editorTemplate -endLayout;
+
+		editorTemplate -beginLayout "⟦ Intensity Attributes ⟧ (Vertex Color)" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "intensity" "transfertIntensity";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "intensityAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutIntensity" "LGHTAEOverrideLayoutIntensity_Replace" "intensityRootOverride" "transfertIntensityRoot" "intensityAlongBranchRoot";
+
+			editorTemplate -s "intensity";
+			editorTemplate -s "transfertIntensity";
+			editorTemplate -s "intensityAlongBranch";
+			editorTemplate -s "intensityRootOverride";
+			editorTemplate -s "intensityAlongBranchRoot";
+			editorTemplate -s "transfertIntensityRoot";	
+		editorTemplate -endLayout;
+	
+		editorTemplate -beginLayout "⟦ Chaos Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosDisplacement" "transfertChaosOffset";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosFrequency" "transfertChaosFrequency";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosDisplacementAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";
+
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosFreqFactor";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinClamp";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxClamp";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinRemap";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxRemap";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosVibration" "transfertChaosVibration";
+			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "vibrationFreqFactor";
+
+			editorTemplate -s "chaosDisplacementRootOverride";
+			editorTemplate -s "transfertChaosOffsetRoot";
+			editorTemplate -s "chaosDisplacementAlongBranchRoot";
+			editorTemplate -s "transfertChaosFrequencyRoot";
+
+			editorTemplate -s "chaosDisplacement";
+			editorTemplate -s "transfertChaosOffset";
+			editorTemplate -s "chaosFrequency";
+			editorTemplate -s "transfertChaosFrequency";
+			editorTemplate -s "chaosVibration";
+			editorTemplate -s "transfertChaosVibration";
+
+			editorTemplate -s "secondaryChaosFreqFactor";
+			editorTemplate -s "secondaryChaosMinClamp";
+			editorTemplate -s "secondaryChaosMaxClamp";
+			editorTemplate -s "secondaryChaosMinRemap";
+			editorTemplate -s "secondaryChaosMaxRemap";
+			editorTemplate -s "vibrationFreqFactor";
+
+			editorTemplate -s "chaosDisplacementAlongBranch";
+		editorTemplate -endLayout;
+
+		editorTemplate -beginLayout "⟦ Childs Generation Attributes ⟧" -collapse 1;
+			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumber" "transfertNumChildren";
+			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumberRand" "transfertNumChildrenRand";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childProbabilityAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "childrenNumberRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
+
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationAlongBranch";
+			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationRandAlongBranch";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutElevation" "LGHTAEOverrideLayoutElevation_Replace" "elevationRootOverride" "elevationAlongBranchRoot" "elevationRandAlongBranchRoot";
+
+			editorTemplate -s "childrenNumber";
+			editorTemplate -s "transfertNumChildren";
+			editorTemplate -s "childrenNumberRand";
+			editorTemplate -s "transfertNumChildrenRand";
+			editorTemplate -s "childProbabilityAlongBranch";
+
+			editorTemplate -s "childrenNumberRootOverride";
+			editorTemplate -s "transfertNumChildrenRoot";
+			editorTemplate -s "transfertNumChildrenRandRoot";			
+			editorTemplate -s "elevationRootOverride";
+			editorTemplate -s "elevationAlongBranchRoot";
+			editorTemplate -s "elevationRandAlongBranchRoot";
+		editorTemplate -endLayout;
+		
+		editorTemplate -s "inputCurve";
+
+
+		AEdependNodeTemplate $nodeName;
+
+	editorTemplate -addExtraControls;
+	editorTemplate -endScrollLayout;
+}
+
+global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, string $att2S, int $isFloat )
+{
+	string $att1 = LGHTAEAttName($att1S);
+	string $att2 = LGHTAEAttName($att2S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 5 -cw5 130 35 55 100 30;
+	if ($name == "")
+	{
+		$name = `attributeName -nice $att1S`;
+	}
+	text -label $name -align "left";
+	text -label "base";
+	if ($isFloat == 1)
+	{
+		floatField -w 35 ($att1+"_fldGrp");
+	}
+	else
+	{
+		intField -w 35 ($att1+"_fldGrp");	
+	}
+	text -label "transfert Factor" -align "right";
+	floatField ($att2+"_fldGrp");
+	setParent ..;
+	setParent ..;
+
+	LGHTAELineBaseTransfertLayout_Replace( $att1S, $att2S );
+}
+
+global proc LGHTAELineBaseIntTransfertLayout( string $baseAttS, string $transfertAttS )
+{
+	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 0);
+}
+
+global proc LGHTAELineBaseFloatTransfertLayout( string $baseAttS, string $transfertAttS )
+{
+	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 1);
+}
+
+global proc LGHTAELineBaseTransfertLayout_Replace( string $baseAttS, string $transfertAttS )
+{
+	string $base = LGHTAEAttName($baseAttS);
+	string $trans = LGHTAEAttName($transfertAttS);
+	connectControl ($base+"_fldGrp") $baseAttS;
+	connectControl ($trans+"_fldGrp") $transfertAttS;	
+}
+
+global proc LGHTAELineBaseAttribute ( string $name, string $att1S, int $isFloat )
+{
+	string $att1 = LGHTAEAttName($att1S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 2 -cw2 165 55;
+	if ($name == "")
+	{
+		$name = `attributeName -nice $att1S`;
+	}
+	text -label $name -align "left";
+	if ($isFloat == 1)
+	{
+		floatField -w 35 ($att1+"_fldGrp");
+	}
+	else
+	{
+		intField -w 35 ($att1+"_fldGrp");	
+	}
+	setParent ..;
+	setParent ..;
+
+	LGHTAELineBaseLayout_Replace( $att1S );
+
+}
+
+global proc LGHTAELineBaseLayout_Replace( string $baseAttS )
+{
+	string $base = LGHTAEAttName($baseAttS);
+	connectControl ($base+"_fldGrp") $baseAttS;
+}
+
+global proc LGHTAELineBaseFloatAttribute ( string $att1S )
+{
+	LGHTAELineBaseAttribute ( "", $att1S, 1);
+}
+
+global proc LGHTAELineTransfertAttribute( string $name, string $attS )
+{
+	string $att = LGHTAEAttName($attS);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 3 -cw3 145 100 30;
+	if ($name == "")
+		$name = `attributeName -nice $attS`;
+
+	text -label $name -align "left";
+	text -label "transfert Factor" -align "right";
+	floatField ($att+"_fldGrp");
+	setParent ..;
+	setParent ..;
+	LGHTAELineTransfertAttribute_Replace($attS);
+}
+
+global proc LGHTAELineTransfertAttribute_Replace( string $attS )
+{
+	string $att = LGHTAEAttName($attS);
+	connectControl ($att+"_fldGrp") $attS;	
+}
+
+global proc LGHTAETimeAccumulateLayout ( string $att1S, string $att2S )
+{
+	string $att1 = LGHTAEAttName($att1S);
+	string $att2 = LGHTAEAttName($att2S);
+
+	columnLayout -rowSpacing 2 -cat "left" 15 -adj true;
+	rowLayout -nc 4 -cw4 130 70 140 60;
+	$name1 = `attributeName -nice $att1S`;
+	text -label $name1 -align "left";
+	checkBox -label "" ($att1+"_chkBx");
+	$name2 = `attributeName -nice $att2S`;
+	text -label $name2 -align "left";
+	floatField -w 50 ($att2+"_fldGrp");
+	setParent ..;
+	setParent ..;
+
+	LGHTAETimeAccumulateLayout_Replace( $att1S, $att2S );
+}
+
+global proc LGHTAETimeAccumulateLayout_Replace ( string $att1S, string $att2S )
+{
+	string $att1 = LGHTAEAttName($att1S);
+	string $att2 = LGHTAEAttName($att2S);
+	connectControl ($att1+"_chkBx") $att1S;
+	connectControl ($att2+"_fldGrp") $att2S;
+}
+
+global proc string LGHTAEAttName( string $att )
+{
+	string $part[];
+	tokenize($att, ".", $part);
+	return $part[1];
+}
+
+global proc LGHTAEEnableOverrideFL( string $fl, string $chb )
+{
+	int $v = `checkBox -q -v $chb`;
+	frameLayout -e -vis ($v) $fl;
+}
+
+global proc LGHTAEOverrideLayoutGeneric( string $name, string $overrideAttS )
+{
+	string $overrideAtt = LGHTAEAttName($overrideAttS);
+	string $chkName = ($overrideAtt+"_CHB");
+	string $flName = ($overrideAtt+"_FL");
+	columnLayout -rowSpacing 1 -cat "left" 15 -adj true;
+	checkBox -label ("Activate Root "+$name+" Overrides") $chkName;
+	frameLayout -collapsable false -cl false -lv false -vis true -borderStyle "in" -mw 0 -mh 5 $flName;
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+}
+
+global proc LGHTAEOverrideLayoutGeneric_Replace ( string $overrideAttS )
+{
+	string $overrideAtt = LGHTAEAttName($overrideAttS);
+	connectControl ($overrideAtt+"_CHB") $overrideAttS;
+}
+
+global proc LGHTAEOverrideLayoutLength( string $overrideAttS , string $attRootTrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Length", $overrideAttS );
+	LGHTAELineTransfertAttribute( "length", $attRootTrS );
+	LGHTAERampControl( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutLength_Replace( string $overrideAttS , string $attRootTrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace( $attRootTrS );
+	LGHTAERampControl_Replace( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutIntensity( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Intensity", $overrideAttS );
+	LGHTAELineTransfertAttribute( "intensity", $attRoot1TrS );
+	LGHTAERampControl( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutIntensity_Replace( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace( $attRoot1TrS );
+	LGHTAERampControl_Replace( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutRadius( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Radius", $overrideAttS );
+	LGHTAELineTransfertAttribute( "radius", $attRoot1TrS );
+	LGHTAERampControl( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutRadius_Replace( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAERampControl_Replace ($attRootRpS);
+}
+
+global proc LGHTAEOverrideLayoutTime( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric( "Time", $overrideAttS );
+	LGHTAELineTransfertAttribute( "Chaos Time Multiplier", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Skeleton Time Multiplier", $attRoot2TrS );
+}
+
+global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+}
+
+global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Children Nums", $overrideAttS );
+	LGHTAELineTransfertAttribute( "Children Number", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Children Number Rand", $attRoot2TrS );
+	LGHTAERampControl( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutChildren_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+	LGHTAERampControl_Replace( $attRootRpS );
+}
+
+global proc LGHTAEOverrideLayoutElevation( string $overrideAttS , string $attRoot1RpS, string $attRoot2RpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Elevations", $overrideAttS );
+	LGHTAERampControl( $attRoot1RpS );
+	LGHTAERampControl( $attRoot2RpS );
+}
+
+global proc LGHTAEOverrideLayoutElevation_Replace( string $overrideAttS , string $attRoot1RpS, string $attRoot2RpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAERampControl_Replace( $attRoot1RpS );
+	LGHTAERampControl_Replace( $attRoot2RpS );
+}
+
+global proc LGHTAEOverrideLayoutChaos( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
+{
+	LGHTAEOverrideLayoutGeneric( "Chaos", $overrideAttS );
+	LGHTAELineTransfertAttribute( "Chaos Displacement", $attRoot1TrS );
+	LGHTAELineTransfertAttribute( "Chaos Frequency", $attRoot2TrS );
+	LGHTAERampControl( $attRoot1RpS );
+}
+
+global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
+{
+	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
+	LGHTAELineTransfertAttribute_Replace( $attRoot1TrS );
+	LGHTAELineTransfertAttribute_Replace( $attRoot2TrS );
+	LGHTAERampControl_Replace( $attRoot1RpS );
+}
