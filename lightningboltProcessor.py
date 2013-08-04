@@ -535,7 +535,7 @@ eSPEBR = enum('seedSkeleton', 'seedChaos', 'max')
 # Values Depending on Generation and that are transmitted to the next generation by factor vector
 eGEN = enum('childrenNumber', 'childrenNumberRand', 'skeletonTime', 'chaosTime', 'chaosDisplacement', 'chaosFrequency', 'chaosVibration', 'lengthRand', 'max')
 
-# Along Path values Special ( No Transfert to Child )
+# Along Path values Special ( No Transfer to Child )
 eAPSPE = enum('elevation', 'elevationRand', 'childProbability', 'chaosDisplacement', 'max')
 
 class lightningBoltProcessor:
@@ -564,8 +564,8 @@ class lightningBoltProcessor:
 		self.APBR_ROOT = None
 		# this is a vector with all the multiplicator to apply to APVInputs
 		self.APBRFactorsInit = np.zeros((eAPBR.max),np.float32)
-		self.APBRTransfert = np.ones(eAPBR.max,np.float32) # factors for transfert of attribute from parent to child
-		self.APBRTransfert_ROOT = np.ones(eAPBR.max,np.float32) # factors for transfert of attribute 
+		self.APBRTransfer = np.ones(eAPBR.max,np.float32) # factors for transfer of attribute from parent to child
+		self.APBRTransfer_ROOT = np.ones(eAPBR.max,np.float32) # factors for transfer of attribute 
 
 
 		# Per Branch Special values (is not transmitted by function to child)
@@ -577,8 +577,8 @@ class lightningBoltProcessor:
 		# 1 childrenNumberRand (nombre d'enfant potentiellement genere aleatoirement en plus)
 		# 2 skeletonTimeMult (Multiplicator to timeSkeleton used to generate the childs number and params)
 		self.GEN = np.zeros((eGEN.max),np.float32)
-		self.GENTransfert = np.ones(eGEN.max,np.float32) # mult for transfert of attribute from parent to child
-		self.GENTransfert_ROOT = np.ones(eGEN.max,np.float32) # mult for transfert of attribute from parent to child
+		self.GENTransfer = np.ones(eGEN.max,np.float32) # mult for transfer of attribute from parent to child
+		self.GENTransfer_ROOT = np.ones(eGEN.max,np.float32) # mult for transfer of attribute from parent to child
 
 		self.APSPE = None
 		self.APSPE_ROOT = None
@@ -642,22 +642,22 @@ class lightningBoltProcessor:
 	def setAPVFactors(self, num, value):
 		self.APBRFactorsInit[num] = value
 
-	def setAPVTransfert(self, num, value, valueRoot=None):
-		self.APBRTransfert[num] = value
+	def setAPVTransfer(self, num, value, valueRoot=None):
+		self.APBRTransfer[num] = value
 		if valueRoot is None:
-			self.APBRTransfert_ROOT[num] = value
+			self.APBRTransfer_ROOT[num] = value
 		else:
-			self.APBRTransfert_ROOT[num] = valueRoot
+			self.APBRTransfer_ROOT[num] = valueRoot
 
 # Generation Dependent
 	def setGENValue(self, num, value):
 		self.GEN[num] = value
-	def setGENTransfert(self, num, value, valueRoot=None):
-		self.GENTransfert[num] = value
+	def setGENTransfer(self, num, value, valueRoot=None):
+		self.GENTransfer[num] = value
 		if valueRoot is None:
-			self.GENTransfert_ROOT[num] = value
+			self.GENTransfer_ROOT[num] = value
 		else:
-			self.GENTransfert_ROOT[num] = valueRoot
+			self.GENTransfer_ROOT[num] = valueRoot
 
 # Along Path Special Values
 	def getAPSPE(self, num):
@@ -704,7 +704,7 @@ class lightningBoltProcessor:
 		return self.numStartSeedBranch, startSeedPath, dirVectors,  startSeedAPVMult, startSeedBranchSpeValues
 
 
-	def generate( self, time, timesAccumulator, batch, APBranchV, APSpeV, APBranchTransfert, GenValues, isLooping, doGenerateChilds ):
+	def generate( self, time, timesAccumulator, batch, APBranchV, APSpeV, APBranchTransfer, GenValues, isLooping, doGenerateChilds ):
 		epsilon = 0.00001
 
 		# unpack
@@ -901,7 +901,7 @@ class lightningBoltProcessor:
 			APVView = APBranchesArray.reshape(-1,eAPBR.max)
 			APVViewT0 = APVView[indexT0]
 			APBranchMultsChilds = APVViewT0 + blend*( APVView[indexT0+1] - APVViewT0 )
-			APBranchMultsChilds *= APBranchTransfert #self.APBRTransfert # transfert Along Path Branch multiply
+			APBranchMultsChilds *= APBranchTransfer #self.APBRTransfer # transfer Along Path Branch multiply
 
 		# Then the Special Values for child branches
 			SPEBRValuesChilds = np.empty( (totalChildNumber,eSPEBR.max ), np.float32  )
@@ -1003,9 +1003,9 @@ class lightningBoltProcessor:
 		GenValues =  self.GEN.copy() # Per generation Values, they are going to be modified every new generation so we do a copy
 		
 		APBranch = self.APBR_ROOT
-		APBranchTransfert = self.APBRTransfert_ROOT
+		APBranchTransfer = self.APBRTransfer_ROOT
 		APSpe = self.APSPE_ROOT
-		GenTransfert = self.GENTransfert_ROOT
+		GenTransfer = self.GENTransfer_ROOT
 		
 		self.timer.start()
 
@@ -1031,10 +1031,10 @@ class lightningBoltProcessor:
 		self.previousTime = self.GLOBALS[eGLOBAL.time]
 
 		while batch is not None:
-			outFrames, outIntensities, childBatch = self.generate( time, self.timesAccumulator[currentGeneration,:], batch, APBranch, APSpe, APBranchTransfert, GenValues, isLooping, currentGeneration<self.GLOBALS[eGLOBAL.maxGeneration])
+			outFrames, outIntensities, childBatch = self.generate( time, self.timesAccumulator[currentGeneration,:], batch, APBranch, APSpe, APBranchTransfer, GenValues, isLooping, currentGeneration<self.GLOBALS[eGLOBAL.maxGeneration])
 
-			# Apply the transfert to the Generation Values (it's per generation so do it here)
-			GenValues *= GenTransfert # transfert Values multiply
+			# Apply the transfer to the Generation Values (it's per generation so do it here)
+			GenValues *= GenTransfer # transfer Values multiply
 
 			if isLooping :
 				resultLoopingFrames.append(outFrames.reshape(-1,4,4))
@@ -1047,9 +1047,9 @@ class lightningBoltProcessor:
 			batch = childBatch
 			# set the generation to the general values
 			APBranch = self.APBR
-			APBranchTransfert = self.APBRTransfert
+			APBranchTransfer = self.APBRTransfer
 			APSpe = self.APSPE
-			GenTransfert = self.GENTransfert
+			GenTransfer = self.GENTransfer
 
 			isLooping = False # only the first generation can loop
 			currentGeneration = currentGeneration + 1
