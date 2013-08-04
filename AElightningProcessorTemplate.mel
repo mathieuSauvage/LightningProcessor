@@ -230,85 +230,85 @@ global proc AElightningProcessorTemplate( string $nodeName )
 		editorTemplate -endLayout;
 		
 		editorTemplate -beginLayout "⟦ Time Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosTimeMultiplier" "transfertChaosTime";
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "skeletonTimeMultiplier" "transfertSkeletonTime";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transfertChaosTimeRoot" "transfertSkeletonTimeRoot";				
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "chaosTimeMultiplier" "transferChaosTime";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "skeletonTimeMultiplier" "transferSkeletonTime";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutTime" "LGHTAEOverrideLayoutTime_Replace" "timeRootOverride" "transferChaosTimeRoot" "transferSkeletonTimeRoot";				
 			editorTemplate -s "chaosTimeMultiplier";
 			editorTemplate -s "vibrationFreqFactor";
-			editorTemplate -s "transfertChaosTime";
+			editorTemplate -s "transferChaosTime";
 			editorTemplate -s "skeletonTimeMultiplier";
-			editorTemplate -s "transfertSkeletonTime";
+			editorTemplate -s "transferSkeletonTime";
 			editorTemplate -s "timeRootOverride";
-			editorTemplate -s "transfertChaosTimeRoot";
-			editorTemplate -s "transfertSkeletonTimeRoot";	
+			editorTemplate -s "transferChaosTimeRoot";
+			editorTemplate -s "transferSkeletonTimeRoot";	
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Length Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "length" "transfertLength";
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "lengthRand" "transfertLengthRand";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "length" "transferLength";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "lengthRand" "transferLengthRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childLengthAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transfertLengthRoot" "childLengthAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutLength" "LGHTAEOverrideLayoutLength_Replace" "lengthRootOverride" "transferLengthRoot" "childLengthAlongBranchRoot";
 
 			editorTemplate -s "length";
-			editorTemplate -s "transfertLength";
+			editorTemplate -s "transferLength";
 			editorTemplate -s "lengthRand";
-			editorTemplate -s "transfertLengthRand";
+			editorTemplate -s "transferLengthRand";
 			editorTemplate -s "childLengthAlongBranch";
 			editorTemplate -s "lengthRootOverride";
-			editorTemplate -s "transfertLengthRoot";
+			editorTemplate -s "transferLengthRoot";
 			editorTemplate -s "childLengthAlongBranchRoot";
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Radius Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "radius" "transfertRadius";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "radius" "transferRadius";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "radiusAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutRadius" "LGHTAEOverrideLayoutRadius_Replace" "radiusRootOverride" "transfertRadiusRoot" "radiusAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutRadius" "LGHTAEOverrideLayoutRadius_Replace" "radiusRootOverride" "transferRadiusRoot" "radiusAlongBranchRoot";
 			editorTemplate -s "radius";
-			editorTemplate -s "transfertRadius";
+			editorTemplate -s "transferRadius";
 			editorTemplate -s "radiusAlongBranch";
 			editorTemplate -s "radiusRootOverride";
-			editorTemplate -s "transfertRadiusRoot";
+			editorTemplate -s "transferRadiusRoot";
 			editorTemplate -s "radiusAlongBranchRoot";
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Intensity Attributes ⟧ (Vertex Color)" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "intensity" "transfertIntensity";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "intensity" "transferIntensity";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "intensityAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutIntensity" "LGHTAEOverrideLayoutIntensity_Replace" "intensityRootOverride" "transfertIntensityRoot" "intensityAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutIntensity" "LGHTAEOverrideLayoutIntensity_Replace" "intensityRootOverride" "transferIntensityRoot" "intensityAlongBranchRoot";
 
 			editorTemplate -s "intensity";
-			editorTemplate -s "transfertIntensity";
+			editorTemplate -s "transferIntensity";
 			editorTemplate -s "intensityAlongBranch";
 			editorTemplate -s "intensityRootOverride";
 			editorTemplate -s "intensityAlongBranchRoot";
-			editorTemplate -s "transfertIntensityRoot";	
+			editorTemplate -s "transferIntensityRoot";	
 		editorTemplate -endLayout;
 	
 		editorTemplate -beginLayout "⟦ Chaos Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosDisplacement" "transfertChaosOffset";
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosFrequency" "transfertChaosFrequency";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "chaosDisplacement" "transferChaosOffset";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "chaosFrequency" "transferChaosFrequency";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "chaosDisplacementAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transfertChaosOffsetRoot" "transfertChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChaos" "LGHTAEOverrideLayoutChaos_Replace" "chaosDisplacementRootOverride" "transferChaosOffsetRoot" "transferChaosFrequencyRoot" "chaosDisplacementAlongBranchRoot";
 
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosFreqFactor";
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinClamp";
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxClamp";
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMinRemap";
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "secondaryChaosMaxRemap";
-			editorTemplate -callCustom "LGHTAELineBaseFloatTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "chaosVibration" "transfertChaosVibration";
+			editorTemplate -callCustom "LGHTAELineBaseFloatTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "chaosVibration" "transferChaosVibration";
 			editorTemplate -callCustom "LGHTAELineBaseFloatAttribute" "LGHTAELineBaseAttribute_Replace" "vibrationFreqFactor";
 
 			editorTemplate -s "chaosDisplacementRootOverride";
-			editorTemplate -s "transfertChaosOffsetRoot";
+			editorTemplate -s "transferChaosOffsetRoot";
 			editorTemplate -s "chaosDisplacementAlongBranchRoot";
-			editorTemplate -s "transfertChaosFrequencyRoot";
+			editorTemplate -s "transferChaosFrequencyRoot";
 
 			editorTemplate -s "chaosDisplacement";
-			editorTemplate -s "transfertChaosOffset";
+			editorTemplate -s "transferChaosOffset";
 			editorTemplate -s "chaosFrequency";
-			editorTemplate -s "transfertChaosFrequency";
+			editorTemplate -s "transferChaosFrequency";
 			editorTemplate -s "chaosVibration";
-			editorTemplate -s "transfertChaosVibration";
+			editorTemplate -s "transferChaosVibration";
 
 			editorTemplate -s "secondaryChaosFreqFactor";
 			editorTemplate -s "secondaryChaosMinClamp";
@@ -321,24 +321,24 @@ global proc AElightningProcessorTemplate( string $nodeName )
 		editorTemplate -endLayout;
 
 		editorTemplate -beginLayout "⟦ Childs Generation Attributes ⟧" -collapse 1;
-			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumber" "transfertNumChildren";
-			editorTemplate -callCustom "LGHTAELineBaseIntTransfertLayout" "LGHTAELineBaseTransfertLayout_Replace" "childrenNumberRand" "transfertNumChildrenRand";
+			editorTemplate -callCustom "LGHTAELineBaseIntTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "childrenNumber" "transferNumChildren";
+			editorTemplate -callCustom "LGHTAELineBaseIntTransferLayout" "LGHTAELineBaseTransferLayout_Replace" "childrenNumberRand" "transferNumChildrenRand";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "childProbabilityAlongBranch";
-			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "childrenNumberRootOverride" "transfertNumChildrenRoot" "transfertNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
+			editorTemplate -callCustom "LGHTAEOverrideLayoutChildren" "LGHTAEOverrideLayoutChildren_Replace" "childrenNumberRootOverride" "transferNumChildrenRoot" "transferNumChildrenRandRoot" "childProbabilityAlongBranchRoot";
 
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationAlongBranch";
 			editorTemplate -callCustom "LGHTAERampControl" "LGHTAERampControl_Replace" "elevationRandAlongBranch";
 			editorTemplate -callCustom "LGHTAEOverrideLayoutElevation" "LGHTAEOverrideLayoutElevation_Replace" "elevationRootOverride" "elevationAlongBranchRoot" "elevationRandAlongBranchRoot";
 
 			editorTemplate -s "childrenNumber";
-			editorTemplate -s "transfertNumChildren";
+			editorTemplate -s "transferNumChildren";
 			editorTemplate -s "childrenNumberRand";
-			editorTemplate -s "transfertNumChildrenRand";
+			editorTemplate -s "transferNumChildrenRand";
 			editorTemplate -s "childProbabilityAlongBranch";
 
 			editorTemplate -s "childrenNumberRootOverride";
-			editorTemplate -s "transfertNumChildrenRoot";
-			editorTemplate -s "transfertNumChildrenRandRoot";			
+			editorTemplate -s "transferNumChildrenRoot";
+			editorTemplate -s "transferNumChildrenRandRoot";			
 			editorTemplate -s "elevationRootOverride";
 			editorTemplate -s "elevationAlongBranchRoot";
 			editorTemplate -s "elevationRandAlongBranchRoot";
@@ -353,7 +353,7 @@ global proc AElightningProcessorTemplate( string $nodeName )
 	editorTemplate -endScrollLayout;
 }
 
-global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, string $att2S, int $isFloat )
+global proc LGHTAELineBaseTransferAttribute ( string $name, string $att1S, string $att2S, int $isFloat )
 {
 	string $att1 = LGHTAEAttName($att1S);
 	string $att2 = LGHTAEAttName($att2S);
@@ -374,30 +374,30 @@ global proc LGHTAELineBaseTransfertAttribute ( string $name, string $att1S, stri
 	{
 		intField -w 35 ($att1+"_fldGrp");	
 	}
-	text -label "transfert Factor" -align "right";
+	text -label "transfer Factor" -align "right";
 	floatField ($att2+"_fldGrp");
 	setParent ..;
 	setParent ..;
 
-	LGHTAELineBaseTransfertLayout_Replace( $att1S, $att2S );
+	LGHTAELineBaseTransferLayout_Replace( $att1S, $att2S );
 }
 
-global proc LGHTAELineBaseIntTransfertLayout( string $baseAttS, string $transfertAttS )
+global proc LGHTAELineBaseIntTransferLayout( string $baseAttS, string $transferAttS )
 {
-	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 0);
+	LGHTAELineBaseTransferAttribute ( "", $baseAttS, $transferAttS, 0);
 }
 
-global proc LGHTAELineBaseFloatTransfertLayout( string $baseAttS, string $transfertAttS )
+global proc LGHTAELineBaseFloatTransferLayout( string $baseAttS, string $transferAttS )
 {
-	LGHTAELineBaseTransfertAttribute ( "", $baseAttS, $transfertAttS, 1);
+	LGHTAELineBaseTransferAttribute ( "", $baseAttS, $transferAttS, 1);
 }
 
-global proc LGHTAELineBaseTransfertLayout_Replace( string $baseAttS, string $transfertAttS )
+global proc LGHTAELineBaseTransferLayout_Replace( string $baseAttS, string $transferAttS )
 {
 	string $base = LGHTAEAttName($baseAttS);
-	string $trans = LGHTAEAttName($transfertAttS);
+	string $trans = LGHTAEAttName($transferAttS);
 	connectControl ($base+"_fldGrp") $baseAttS;
-	connectControl ($trans+"_fldGrp") $transfertAttS;	
+	connectControl ($trans+"_fldGrp") $transferAttS;	
 }
 
 global proc LGHTAELineBaseAttribute ( string $name, string $att1S, int $isFloat )
@@ -437,7 +437,7 @@ global proc LGHTAELineBaseFloatAttribute ( string $att1S )
 	LGHTAELineBaseAttribute ( "", $att1S, 1);
 }
 
-global proc LGHTAELineTransfertAttribute( string $name, string $attS )
+global proc LGHTAELineTransferAttribute( string $name, string $attS )
 {
 	string $att = LGHTAEAttName($attS);
 
@@ -447,14 +447,14 @@ global proc LGHTAELineTransfertAttribute( string $name, string $attS )
 		$name = `attributeName -nice $attS`;
 
 	text -label $name -align "left";
-	text -label "transfert Factor" -align "right";
+	text -label "transfer Factor" -align "right";
 	floatField ($att+"_fldGrp");
 	setParent ..;
 	setParent ..;
-	LGHTAELineTransfertAttribute_Replace($attS);
+	LGHTAELineTransferAttribute_Replace($attS);
 }
 
-global proc LGHTAELineTransfertAttribute_Replace( string $attS )
+global proc LGHTAELineTransferAttribute_Replace( string $attS )
 {
 	string $att = LGHTAEAttName($attS);
 	connectControl ($att+"_fldGrp") $attS;	
@@ -520,72 +520,72 @@ global proc LGHTAEOverrideLayoutGeneric_Replace ( string $overrideAttS )
 global proc LGHTAEOverrideLayoutLength( string $overrideAttS , string $attRootTrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Length", $overrideAttS );
-	LGHTAELineTransfertAttribute( "length", $attRootTrS );
+	LGHTAELineTransferAttribute( "length", $attRootTrS );
 	LGHTAERampControl( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutLength_Replace( string $overrideAttS , string $attRootTrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace( $attRootTrS );
+	LGHTAELineTransferAttribute_Replace( $attRootTrS );
 	LGHTAERampControl_Replace( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutIntensity( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Intensity", $overrideAttS );
-	LGHTAELineTransfertAttribute( "intensity", $attRoot1TrS );
+	LGHTAELineTransferAttribute( "intensity", $attRoot1TrS );
 	LGHTAERampControl( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutIntensity_Replace( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace( $attRoot1TrS );
+	LGHTAELineTransferAttribute_Replace( $attRoot1TrS );
 	LGHTAERampControl_Replace( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutRadius( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Radius", $overrideAttS );
-	LGHTAELineTransfertAttribute( "radius", $attRoot1TrS );
+	LGHTAELineTransferAttribute( "radius", $attRoot1TrS );
 	LGHTAERampControl( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutRadius_Replace( string $overrideAttS , string $attRoot1TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransferAttribute_Replace ($attRoot1TrS);
 	LGHTAERampControl_Replace ($attRootRpS);
 }
 
 global proc LGHTAEOverrideLayoutTime( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
 {
 	LGHTAEOverrideLayoutGeneric( "Time", $overrideAttS );
-	LGHTAELineTransfertAttribute( "Chaos Time Multiplier", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "Skeleton Time Multiplier", $attRoot2TrS );
+	LGHTAELineTransferAttribute( "Chaos Time Multiplier", $attRoot1TrS );
+	LGHTAELineTransferAttribute( "Skeleton Time Multiplier", $attRoot2TrS );
 }
 
 global proc LGHTAEOverrideLayoutTime_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
-	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+	LGHTAELineTransferAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransferAttribute_Replace ($attRoot2TrS);
 }
 
 global proc LGHTAEOverrideLayoutChildren( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Children Nums", $overrideAttS );
-	LGHTAELineTransfertAttribute( "Children Number", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "Children Number Rand", $attRoot2TrS );
+	LGHTAELineTransferAttribute( "Children Number", $attRoot1TrS );
+	LGHTAELineTransferAttribute( "Children Number Rand", $attRoot2TrS );
 	LGHTAERampControl( $attRootRpS );
 }
 
 global proc LGHTAEOverrideLayoutChildren_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRootRpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace ($attRoot1TrS);
-	LGHTAELineTransfertAttribute_Replace ($attRoot2TrS);
+	LGHTAELineTransferAttribute_Replace ($attRoot1TrS);
+	LGHTAELineTransferAttribute_Replace ($attRoot2TrS);
 	LGHTAERampControl_Replace( $attRootRpS );
 }
 
@@ -606,15 +606,15 @@ global proc LGHTAEOverrideLayoutElevation_Replace( string $overrideAttS , string
 global proc LGHTAEOverrideLayoutChaos( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
 {
 	LGHTAEOverrideLayoutGeneric( "Chaos", $overrideAttS );
-	LGHTAELineTransfertAttribute( "Chaos Displacement", $attRoot1TrS );
-	LGHTAELineTransfertAttribute( "Chaos Frequency", $attRoot2TrS );
+	LGHTAELineTransferAttribute( "Chaos Displacement", $attRoot1TrS );
+	LGHTAELineTransferAttribute( "Chaos Frequency", $attRoot2TrS );
 	LGHTAERampControl( $attRoot1RpS );
 }
 
 global proc LGHTAEOverrideLayoutChaos_Replace( string $overrideAttS , string $attRoot1TrS, string $attRoot2TrS, string $attRoot1RpS )
 {
 	LGHTAEOverrideLayoutGeneric_Replace( $overrideAttS );
-	LGHTAELineTransfertAttribute_Replace( $attRoot1TrS );
-	LGHTAELineTransfertAttribute_Replace( $attRoot2TrS );
+	LGHTAELineTransferAttribute_Replace( $attRoot1TrS );
+	LGHTAELineTransferAttribute_Replace( $attRoot2TrS );
 	LGHTAERampControl_Replace( $attRoot1RpS );
 }
