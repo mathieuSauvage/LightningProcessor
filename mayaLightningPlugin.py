@@ -669,37 +669,37 @@ class LBProcNode(OpenMayaMPx.MPxNode):
 			chaosDisplacementMultValue = acc.get( LBProcNode.chaosDisplacementIndex)
 			lengthRandValue = acc.get( LBProcNode.lengthRandIndex)
 			
-			# Transfert of Along Branch dependent values
-			transfertRadiusValue = acc.get( LBProcNode.transfertRadiusIndex)
-			transfertChildLengthValue = acc.get( LBProcNode.transfertLengthIndex)
-			transfertIntensityValue = acc.get( LBProcNode.transfertIntensityIndex)
+			# Transfer of Along Branch dependent values
+			transferRadiusValue = acc.get( LBProcNode.transferRadiusIndex)
+			transferChildLengthValue = acc.get( LBProcNode.transferLengthIndex)
+			transferIntensityValue = acc.get( LBProcNode.transferIntensityIndex)
 
-			# Transfert of Generation dependent values
-			transfertChaosOffsetValue = acc.get( LBProcNode.transfertChaosOffsetIndex)
-			transfertSkeletonTimeValue = acc.get( LBProcNode.transfertSkeletonTimeIndex)
-			transfertChaosTimeValue = acc.get( LBProcNode.transfertChaosTimeIndex)
-			transfertNumChildrenValue = acc.get( LBProcNode.transfertNumChildrenIndex)
-			transfertNumChildrenRandValue = acc.get( LBProcNode.transfertNumChildrenRandIndex)
-			transfertChaosFrequencyValue = acc.get( LBProcNode.transfertChaosFrequencyIndex)
-			transfertChaosVibrationValue = acc.get( LBProcNode.transfertChaosVibrationIndex)
-			transfertLengthRandValue = acc.get( LBProcNode.transfertLengthRandIndex)
+			# Transfer of Generation dependent values
+			transferChaosOffsetValue = acc.get( LBProcNode.transferChaosOffsetIndex)
+			transferSkeletonTimeValue = acc.get( LBProcNode.transferSkeletonTimeIndex)
+			transferChaosTimeValue = acc.get( LBProcNode.transferChaosTimeIndex)
+			transferNumChildrenValue = acc.get( LBProcNode.transferNumChildrenIndex)
+			transferNumChildrenRandValue = acc.get( LBProcNode.transferNumChildrenRandIndex)
+			transferChaosFrequencyValue = acc.get( LBProcNode.transferChaosFrequencyIndex)
+			transferChaosVibrationValue = acc.get( LBProcNode.transferChaosVibrationIndex)
+			transferLengthRandValue = acc.get( LBProcNode.transferLengthRandIndex)
 
 			# And the Root overrides that are not Ramp
 			# Radius
-			transfertRadiusRootValue = acc.getIf( LBProcNode.radiusRootOverrideIndex, LBProcNode.transfertRadiusRootIndex )
+			transferRadiusRootValue = acc.getIf( LBProcNode.radiusRootOverrideIndex, LBProcNode.transferRadiusRootIndex )
 			# Childlength
-			transfertChildLengthRootValue = acc.getIf( LBProcNode.lengthRootOverrideIndex, LBProcNode.transfertLengthRootIndex )
+			transferChildLengthRootValue = acc.getIf( LBProcNode.lengthRootOverrideIndex, LBProcNode.transferLengthRootIndex )
 			# Intensity
-			transfertIntensityRootValue = acc.getIf( LBProcNode.intensityRootOverrideIndex, LBProcNode.transfertIntensityRootIndex )
+			transferIntensityRootValue = acc.getIf( LBProcNode.intensityRootOverrideIndex, LBProcNode.transferIntensityRootIndex )
 			# Times
-			transfertChaosTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertChaosTimeRootIndex )
-			transfertSkeletonTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transfertSkeletonTimeRootIndex )
+			transferChaosTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transferChaosTimeRootIndex )
+			transferSkeletonTimeRootValue = acc.getIf( LBProcNode.timeRootOverrideIndex, LBProcNode.transferSkeletonTimeRootIndex )
 			# Chaos
-			transfertChaosOffsetRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosOffsetRootIndex )
-			transfertChaosFrequencyRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transfertChaosFrequencyRootIndex )
+			transferChaosOffsetRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transferChaosOffsetRootIndex )
+			transferChaosFrequencyRootValue = acc.getIf( LBProcNode.chaosDisplacementRootOverrideIndex, LBProcNode.transferChaosFrequencyRootIndex )
 			# num Children
-			transfertNumChildrenRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transfertNumChildrenRootIndex )
-			transfertNumChildrenRandRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transfertNumChildrenRandRootIndex )
+			transferNumChildrenRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transferNumChildrenRootIndex )
+			transferNumChildrenRandRootValue = acc.getIf( LBProcNode.childrenNumberRootOverrideIndex, LBProcNode.transferNumChildrenRandRootIndex )
 
 			tempCurves = acc.get(LBProcNode.inputCurvesIndex)
 			if tempCurves == []:
@@ -735,10 +735,10 @@ class LBProcNode(OpenMayaMPx.MPxNode):
 			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.radius, radiusValue )
 			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.intensity, intensityValue )
 			self.LP.setAPVFactors( LBProcNode.LM.eAPBR.length, lengthValue )
-			# the corresponding transfert values
-			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.radius, transfertRadiusValue, transfertRadiusRootValue )
-			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.intensity, transfertIntensityValue, transfertIntensityRootValue )
-			self.LP.setAPVTransfert( LBProcNode.LM.eAPBR.length, transfertChildLengthValue, transfertChildLengthRootValue )
+			# the corresponding transfer values
+			self.LP.setAPVTransfer( LBProcNode.LM.eAPBR.radius, transferRadiusValue, transferRadiusRootValue )
+			self.LP.setAPVTransfer( LBProcNode.LM.eAPBR.intensity, transferIntensityValue, transferIntensityRootValue )
+			self.LP.setAPVTransfer( LBProcNode.LM.eAPBR.length, transferChildLengthValue, transferChildLengthRootValue )
 
 			# load the Generation inputs
 			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosFrequency, chaosFrequencyValue )
@@ -749,15 +749,15 @@ class LBProcNode(OpenMayaMPx.MPxNode):
 			self.LP.setGENValue( LBProcNode.LM.eGEN.childrenNumberRand, childrenNumberRandValue )
 			self.LP.setGENValue( LBProcNode.LM.eGEN.chaosDisplacement, chaosDisplacementMultValue )
 			self.LP.setGENValue( LBProcNode.LM.eGEN.lengthRand, lengthRandValue )
-			# the corresponding transfert values
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.skeletonTime, transfertSkeletonTimeValue, transfertSkeletonTimeRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosTime, transfertChaosTimeValue, transfertChaosTimeRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosDisplacement, transfertChaosOffsetValue, transfertChaosOffsetRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.childrenNumber, transfertNumChildrenValue, transfertNumChildrenRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.childrenNumberRand, transfertNumChildrenRandValue, transfertNumChildrenRandRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosFrequency, transfertChaosFrequencyValue, transfertChaosFrequencyRootValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.chaosVibration, transfertChaosVibrationValue )
-			self.LP.setGENTransfert( LBProcNode.LM.eGEN.lengthRand, transfertLengthRandValue )
+			# the corresponding transfer values
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.skeletonTime, transferSkeletonTimeValue, transferSkeletonTimeRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.chaosTime, transferChaosTimeValue, transferChaosTimeRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.chaosDisplacement, transferChaosOffsetValue, transferChaosOffsetRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.childrenNumber, transferNumChildrenValue, transferNumChildrenRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.childrenNumberRand, transferNumChildrenRandValue, transferNumChildrenRandRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.chaosFrequency, transferChaosFrequencyValue, transferChaosFrequencyRootValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.chaosVibration, transferChaosVibrationValue )
+			self.LP.setGENTransfer( LBProcNode.LM.eGEN.lengthRand, transferLengthRandValue )
 								
 			outputHandle.setMObject( self.LP.process() )
 			acc.setClean(eCG.main, data)
@@ -831,15 +831,15 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'chaosDisplacement', 'cd', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'lengthRand', 'lr', eHlpT.double, eCG.main, default=0.5 )
 
-	# Generation Transfert Factors
-	LBProcNode.MHLP.createAtt( 'transfertSkeletonTime', 'tst', eHlpT.double, eCG.main, default=3.0 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosTime', 'tct', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosFrequency', 'tcf', eHlpT.double, eCG.main, default=2.0 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosVibration', 'tcv', eHlpT.double, eCG.main, default=.6 )
-	LBProcNode.MHLP.createAtt( 'transfertNumChildren', 'tnc', eHlpT.double, eCG.main, default=0.5 )
-	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRand', 'tncr', eHlpT.double, eCG.main, default=0.75 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosOffset', 'tco', eHlpT.double, eCG.main, default=0.6 )
-	LBProcNode.MHLP.createAtt( 'transfertLengthRand', 'tlr', eHlpT.double, eCG.main, default=1.5 )
+	# Generation Transfer Factors
+	LBProcNode.MHLP.createAtt( 'transferSkeletonTime', 'tst', eHlpT.double, eCG.main, default=3.0 )
+	LBProcNode.MHLP.createAtt( 'transferChaosTime', 'tct', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferChaosFrequency', 'tcf', eHlpT.double, eCG.main, default=2.0 )
+	LBProcNode.MHLP.createAtt( 'transferChaosVibration', 'tcv', eHlpT.double, eCG.main, default=.6 )
+	LBProcNode.MHLP.createAtt( 'transferNumChildren', 'tnc', eHlpT.double, eCG.main, default=0.5 )
+	LBProcNode.MHLP.createAtt( 'transferNumChildrenRand', 'tncr', eHlpT.double, eCG.main, default=0.75 )
+	LBProcNode.MHLP.createAtt( 'transferChaosOffset', 'tco', eHlpT.double, eCG.main, default=0.6 )
+	LBProcNode.MHLP.createAtt( 'transferLengthRand', 'tlr', eHlpT.double, eCG.main, default=1.5 )
 
 # APV Branches
 	LBProcNode.MHLP.createAtt( 'radiusAlongBranch', 'rab', eHlpT.ramp, eCG.radiusAB )
@@ -849,10 +849,10 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'intensityAlongBranch', 'iab', eHlpT.ramp, eCG.intensityAB )
 	LBProcNode.MHLP.createAtt( 'intensity', 'i', eHlpT.double, eCG.main, default=1.0 )
 
-	# APV Branches Transfert Factors
-	LBProcNode.MHLP.createAtt( 'transfertRadius', 'tr', eHlpT.double, eCG.main, default=0.8 )
-	LBProcNode.MHLP.createAtt( 'transfertLength', 'tl', eHlpT.double, eCG.main, default=0.6 )
-	LBProcNode.MHLP.createAtt( 'transfertIntensity', 'ti', eHlpT.double, eCG.main, default=1.0 )
+	# APV Branches Transfer Factors
+	LBProcNode.MHLP.createAtt( 'transferRadius', 'tr', eHlpT.double, eCG.main, default=0.8 )
+	LBProcNode.MHLP.createAtt( 'transferLength', 'tl', eHlpT.double, eCG.main, default=0.6 )
+	LBProcNode.MHLP.createAtt( 'transferIntensity', 'ti', eHlpT.double, eCG.main, default=1.0 )
 
 # APV Specials
 	LBProcNode.MHLP.createAtt( 'chaosDisplacementAlongBranch', 'cdab', eHlpT.ramp, eCG.chaosDisplacementAB )
@@ -864,19 +864,19 @@ def nodeInitializer():
 	LBProcNode.MHLP.createAtt( 'childProbabilityAlongBranch', 'cpab', eHlpT.ramp, eCG.childProbabilityAB )
 
 # Root Overrides
-	# Generation Transfert Overrides
+	# Generation Transfer Overrides
 	LBProcNode.MHLP.createAtt( 'timeRootOverride', 'tro', eHlpT.bool, eCG.main, default=False )
-	LBProcNode.MHLP.createAtt( 'transfertChaosTimeRoot', 'tctrt', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'transfertSkeletonTimeRoot', 'tstrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferChaosTimeRoot', 'tctrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferSkeletonTimeRoot', 'tstrt', eHlpT.double, eCG.main, default=1.0 )
 
 	LBProcNode.MHLP.createAtt( 'chaosDisplacementRootOverride', 'coro', eHlpT.bool, eCG.chaosDisplacementABRoot, default=True )
 	LBProcNode.MHLP.createAtt( 'chaosDisplacementAlongBranchRoot', 'orrt', eHlpT.ramp, eCG.chaosDisplacementABRoot )
-	LBProcNode.MHLP.createAtt( 'transfertChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=0.55 )
-	LBProcNode.MHLP.createAtt( 'transfertChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=2.0 )
+	LBProcNode.MHLP.createAtt( 'transferChaosOffsetRoot', 'tor', eHlpT.double, eCG.main, default=0.55 )
+	LBProcNode.MHLP.createAtt( 'transferChaosFrequencyRoot', 'tcfr', eHlpT.double, eCG.main, default=2.0 )
 
 	LBProcNode.MHLP.createAtt( 'childrenNumberRootOverride', 'ncro', eHlpT.bool, eCG.main, default=0 )
-	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRoot', 'tncrt', eHlpT.double, eCG.main, default=1.0 )
-	LBProcNode.MHLP.createAtt( 'transfertNumChildrenRandRoot', 'tncrrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferNumChildrenRoot', 'tncrt', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferNumChildrenRandRoot', 'tncrrt', eHlpT.double, eCG.main, default=1.0 )
 	LBProcNode.MHLP.createAtt( 'childProbabilityAlongBranchRoot', 'cpabr', eHlpT.ramp, eCG.childProbabilityABRoot )
 
 
@@ -888,15 +888,15 @@ def nodeInitializer():
 	# APV Branches overrides
 	LBProcNode.MHLP.createAtt( 'radiusRootOverride', 'rro', eHlpT.bool, eCG.radiusABRoot, default=True )
 	LBProcNode.MHLP.createAtt( 'radiusAlongBranchRoot', 'rrrt', eHlpT.ramp, eCG.radiusABRoot )
-	LBProcNode.MHLP.createAtt( 'transfertRadiusRoot', 'trr', eHlpT.double, eCG.main, default=0.45 )
+	LBProcNode.MHLP.createAtt( 'transferRadiusRoot', 'trr', eHlpT.double, eCG.main, default=0.45 )
 	
-	LBProcNode.MHLP.createAtt( 'lengthRootOverride', 'lro', eHlpT.bool, eCG.childLengthABRoot, default=False )
+	LBProcNode.MHLP.createAtt( 'lengthRootOverride', 'lro', eHlpT.bool, eCG.childLengthABRoot, default=True )
 	LBProcNode.MHLP.createAtt( 'childLengthAlongBranchRoot', 'clapr', eHlpT.ramp, eCG.childLengthABRoot )
-	LBProcNode.MHLP.createAtt( 'transfertLengthRoot', 'tlro', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferLengthRoot', 'tlro', eHlpT.double, eCG.main, default=0.4 )
 	
 	LBProcNode.MHLP.createAtt( 'intensityRootOverride', 'iro', eHlpT.bool, eCG.intensityABRoot, default=True )
 	LBProcNode.MHLP.createAtt( 'intensityAlongBranchRoot', 'iabr', eHlpT.ramp, eCG.intensityABRoot )
-	LBProcNode.MHLP.createAtt( 'transfertIntensityRoot', 'tir', eHlpT.double, eCG.main, default=1.0 )
+	LBProcNode.MHLP.createAtt( 'transferIntensityRoot', 'tir', eHlpT.double, eCG.main, default=1.0 )
 
 # OUTPUTS
 	LBProcNode.MHLP.createAtt( 'outputMesh', 'om', eHlpT.mesh, eCG.main, isInput=False )
